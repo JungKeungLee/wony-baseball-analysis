@@ -1,0 +1,25 @@
+.venv/
+__pycache__/
+.pytest_cache/
+data/
+*.pyc
+node_modules/
+
+# Local configuration, temporary files and tool caches
+.env
+.env.*
+!.env.example
+*.tmp
+*.log
+*.zip
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+playwright-report/
+test-results/
+.agents/
+.codex/
+.aws/
+.DS_Store
+Thumbs.db

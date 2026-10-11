@@ -1,0 +1,60 @@
+{
+  "example_source": "synthetic_pose_not_real_video",
+  "role": "unknown",
+  "requested_role": "auto",
+  "status": "unknown_role",
+  "role_candidates": [
+    {
+      "value": "batter",
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": null
+    },
+    {
+      "value": "defense",
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": null
+    },
+    {
+      "value": "catcher",
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": null
+    },
+    {
+      "value": "pitcher",
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": null
+    }
+  ],
+  "summary": {},
+  "metrics": {},
+  "events": [],
+  "strengths": [],
+  "weaknesses": [],
+  "coaching": [],
+  "usable_pose_frames": 8,
+  "role_estimate": {
+    "value": "unknown",
+    "unit": null,
+    "estimated": true,
+    "confidence": 0.0,
+    "confidence_grade": "low",
+    "method": "Automatic role classification is not implemented",
+    "reason": null
+  }
+}

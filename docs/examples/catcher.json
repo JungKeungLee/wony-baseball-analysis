@@ -1,0 +1,382 @@
+{
+  "example_source": "synthetic_pose_not_real_video",
+  "role": "catcher",
+  "summary": {
+    "ready_stance": {
+      "value": 1.3333333333333333,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "Initial ankle separation",
+      "reason": null
+    },
+    "knee_flexion": {
+      "value": 0.0,
+      "unit": "degrees",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "Initial mean 2D knee flexion",
+      "reason": null
+    },
+    "balance": {
+      "value": 0.4228854653311239,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "Final hip offset from ankle midpoint",
+      "reason": null
+    }
+  },
+  "receiving": {
+    "receiving_posture": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    },
+    "mitt_start_position": {
+      "value": 0.7453559924999299,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.25,
+      "confidence_grade": "low",
+      "method": "Non-throwing wrist relative to hip; glove not detected",
+      "reason": null
+    },
+    "mitt_movement": {
+      "value": 0.6802777210652851,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.25,
+      "confidence_grade": "low",
+      "method": "Non-throwing wrist movement proxy",
+      "reason": null
+    },
+    "framing": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    },
+    "receive_success": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    }
+  },
+  "blocking": {
+    "low_blocking_posture": {
+      "value": false,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "method": "Knee flexion >60 degrees candidate; ball blocking unverified",
+      "reason": null
+    },
+    "lateral_blocking": {
+      "value": 0.46666666666666673,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.3,
+      "confidence_grade": "low",
+      "method": "Signed image-horizontal hip displacement",
+      "reason": null
+    },
+    "blocking_success": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    }
+  },
+  "throwing_transition": {
+    "standing_up": {
+      "value": 0.0,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.25,
+      "confidence_grade": "low",
+      "method": "Image-up hip displacement; not verified stand-up event",
+      "reason": null
+    },
+    "throwing_preparation": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    },
+    "transition_time": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    },
+    "throw_start_time": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    },
+    "second_base_preparation": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    }
+  },
+  "metrics": {
+    "ready_stance": {
+      "value": 1.3333333333333333,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "Initial ankle separation",
+      "reason": null
+    },
+    "knee_flexion": {
+      "value": 0.0,
+      "unit": "degrees",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "Initial mean 2D knee flexion",
+      "reason": null
+    },
+    "center_height": {
+      "value": 1.0000000000000002,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "Hip height relative to ankles in image",
+      "reason": null
+    },
+    "center_position": {
+      "value": 0.0,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "Hip horizontal offset from ankle midpoint",
+      "reason": null
+    },
+    "trunk_height": {
+      "value": 2.0000000000000004,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "Image shoulder height relative to ankles",
+      "reason": null
+    },
+    "mitt_start_position": {
+      "value": 0.7453559924999299,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.25,
+      "confidence_grade": "low",
+      "method": "Non-throwing wrist relative to hip; glove not detected",
+      "reason": null
+    },
+    "receiving_posture": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    },
+    "mitt_movement": {
+      "value": 0.6802777210652851,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.25,
+      "confidence_grade": "low",
+      "method": "Non-throwing wrist movement proxy",
+      "reason": null
+    },
+    "framing": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    },
+    "low_blocking_posture": {
+      "value": false,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "method": "Knee flexion >60 degrees candidate; ball blocking unverified",
+      "reason": null
+    },
+    "lateral_blocking": {
+      "value": 0.46666666666666673,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.3,
+      "confidence_grade": "low",
+      "method": "Signed image-horizontal hip displacement",
+      "reason": null
+    },
+    "throwing_preparation": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    },
+    "standing_up": {
+      "value": 0.0,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.25,
+      "confidence_grade": "low",
+      "method": "Image-up hip displacement; not verified stand-up event",
+      "reason": null
+    },
+    "transition_time": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    },
+    "upper_body_rotation": {
+      "value": 0.0,
+      "unit": "degrees",
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "method": "Image-plane shoulder-line range",
+      "reason": null
+    },
+    "balance": {
+      "value": 0.4228854653311239,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "Final hip offset from ankle midpoint",
+      "reason": null
+    },
+    "receive_success": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    },
+    "blocking_success": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    },
+    "throw_start_time": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    },
+    "second_base_preparation": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Ball/mitt detection, catch event or target calibration required; not supported"
+    }
+  },
+  "events": [
+    {
+      "timestamp": 0.4,
+      "role": "catcher",
+      "type": "receive",
+      "estimated": true,
+      "confidence": 0.15,
+      "confidence_grade": "low",
+      "candidate": true,
+      "metrics": {
+        "mitt_movement": {
+          "value": 0.6802777210652851,
+          "unit": "torso_lengths",
+          "estimated": true,
+          "confidence": 0.25,
+          "confidence_grade": "low",
+          "method": "Non-throwing wrist movement proxy",
+          "reason": null
+        }
+      }
+    }
+  ],
+  "usable_pose_frames": 8,
+  "strengths": [],
+  "weaknesses": [
+    {
+      "metric": "balance",
+      "text": "영상에서 골반 중심 변화가 큽니다.",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium"
+    }
+  ],
+  "coaching": [
+    {
+      "text": "고정 카메라 영상에서 머리와 골반 이동을 다시 확인하세요.",
+      "metric": "balance",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium"
+    }
+  ],
+  "requested_role": "catcher",
+  "status": "completed"
+}

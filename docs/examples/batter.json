@@ -1,0 +1,294 @@
+{
+  "example_source": "synthetic_pose_not_real_video",
+  "role": "batter",
+  "summary": {
+    "stance_type": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Requires calibrated field direction, bat/ball detection, or hand landmarks; not supported"
+    },
+    "swing_type": {
+      "value": "uppercut",
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "method": "Fastest hand-center segment vertical slope; bat path unverified",
+      "reason": null
+    },
+    "head_stability": {
+      "value": "stable_in_image",
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "Threshold on head displacement",
+      "reason": null
+    },
+    "weight_transfer": {
+      "value": 0.46666666666666673,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "method": "Hip displacement proxy; not actual weight distribution",
+      "reason": null
+    }
+  },
+  "metrics": {
+    "stance_type": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Requires calibrated field direction, bat/ball detection, or hand landmarks; not supported"
+    },
+    "stance_width": {
+      "value": 1.3333333333333333,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "First usable ankle separation",
+      "reason": null
+    },
+    "knee_flexion": {
+      "value": 0.0,
+      "unit": "degrees",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "180 minus mean 2D knee angle",
+      "reason": null
+    },
+    "trunk_lean": {
+      "value": 0.0,
+      "unit": "degrees",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "Image-plane torso inclination",
+      "reason": null
+    },
+    "bat_start_position": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Requires calibrated field direction, bat/ball detection, or hand landmarks; not supported"
+    },
+    "leg_kick": {
+      "value": false,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.25,
+      "confidence_grade": "low",
+      "method": "Any ankle image-up movement > 0.2 torso lengths; camera-sensitive",
+      "reason": null
+    },
+    "front_foot_landing_time": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Requires calibrated field direction, bat/ball detection, or hand landmarks; not supported"
+    },
+    "weight_transfer_score": {
+      "value": 0.46666666666666673,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "method": "Hip displacement proxy; not actual weight distribution",
+      "reason": null
+    },
+    "hip_rotation": {
+      "value": 0.0,
+      "unit": "degrees",
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "method": "Image-plane hip-line orientation range; not axial 3D rotation",
+      "reason": null
+    },
+    "shoulder_rotation": {
+      "value": 0.0,
+      "unit": "degrees",
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "method": "Image-plane shoulder-line orientation range",
+      "reason": null
+    },
+    "head_stability_score": {
+      "value": 0.0,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "Maximum image-plane head displacement; camera must be fixed",
+      "reason": null
+    },
+    "hands_lead": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Requires calibrated field direction, bat/ball detection, or hand landmarks; not supported"
+    },
+    "swing_type": {
+      "value": "uppercut",
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "method": "Fastest hand-center segment vertical slope; bat path unverified",
+      "reason": null
+    },
+    "impact_time": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Requires calibrated field direction, bat/ball detection, or hand landmarks; not supported"
+    },
+    "elbow_angle": {
+      "value": 131.49646835521557,
+      "unit": "degrees",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "2D throwing-side elbow at swing candidate",
+      "reason": null
+    },
+    "wrist_angle": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Requires calibrated field direction, bat/ball detection, or hand landmarks; not supported"
+    },
+    "follow_through": {
+      "value": 0.28170347259668127,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.25,
+      "confidence_grade": "low",
+      "method": "Hand-center displacement after candidate swing",
+      "reason": null
+    },
+    "balance": {
+      "value": 0.4228854653311239,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium",
+      "method": "Final hip offset from ankle midpoint",
+      "reason": null
+    },
+    "whiff": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Requires calibrated field direction, bat/ball detection, or hand landmarks; not supported"
+    },
+    "contact": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Requires calibrated field direction, bat/ball detection, or hand landmarks; not supported"
+    },
+    "foul_or_in_play": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Requires calibrated field direction, bat/ball detection, or hand landmarks; not supported"
+    },
+    "pull_or_opposite": {
+      "value": null,
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.0,
+      "confidence_grade": "low",
+      "method": null,
+      "reason": "Requires calibrated field direction, bat/ball detection, or hand landmarks; not supported"
+    }
+  },
+  "events": [
+    {
+      "timestamp": 0.4,
+      "role": "batter",
+      "type": "swing",
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "candidate": true,
+      "metrics": {
+        "swing_type": {
+          "value": "uppercut",
+          "unit": null,
+          "estimated": true,
+          "confidence": 0.2,
+          "confidence_grade": "low",
+          "method": "Fastest hand-center segment vertical slope; bat path unverified",
+          "reason": null
+        }
+      }
+    }
+  ],
+  "usable_pose_frames": 8,
+  "strengths": [
+    {
+      "metric": "head_stability_score",
+      "text": "영상에서 머리 변화가 작습니다.",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium"
+    }
+  ],
+  "weaknesses": [
+    {
+      "metric": "balance",
+      "text": "영상에서 골반 중심 변화가 큽니다.",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium"
+    }
+  ],
+  "coaching": [
+    {
+      "text": "고정 카메라 영상에서 머리와 골반 이동을 다시 확인하세요.",
+      "metric": "balance",
+      "estimated": true,
+      "confidence": 0.54,
+      "confidence_grade": "medium"
+    }
+  ],
+  "requested_role": "batter",
+  "status": "completed"
+}

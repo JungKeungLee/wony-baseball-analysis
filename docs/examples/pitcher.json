@@ -1,0 +1,163 @@
+{
+  "example_source": "synthetic_pose_not_real_video",
+  "metrics": {
+    "ready_stance": {
+      "value": 1.3333333333333333,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.585,
+      "confidence_grade": "medium",
+      "method": "First usable frame ankle separation",
+      "reason": null
+    },
+    "arm_angle": {
+      "value": -34.99202019855867,
+      "unit": "degrees",
+      "estimated": true,
+      "confidence": 0.585,
+      "confidence_grade": "medium",
+      "method": "2D angle at wrist-motion candidate or first frame if no motion",
+      "reason": null
+    },
+    "elbow_angle": {
+      "value": 131.49646835521557,
+      "unit": "degrees",
+      "estimated": true,
+      "confidence": 0.585,
+      "confidence_grade": "medium",
+      "method": "2D angle at wrist-motion candidate or first frame if no motion",
+      "reason": null
+    },
+    "shoulder_angle": {
+      "value": 30.37912601136835,
+      "unit": "degrees",
+      "estimated": true,
+      "confidence": 0.585,
+      "confidence_grade": "medium",
+      "method": "2D angle at wrist-motion candidate or first frame if no motion",
+      "reason": null
+    },
+    "torso_lean": {
+      "value": -14.931417178137549,
+      "unit": "degrees",
+      "estimated": true,
+      "confidence": 0.585,
+      "confidence_grade": "medium",
+      "method": "2D angle at wrist-motion candidate or first frame if no motion",
+      "reason": null
+    },
+    "stride": {
+      "value": 1.3333333333333333,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.585,
+      "confidence_grade": "medium",
+      "method": "Maximum ankle separation / torso length",
+      "reason": null
+    },
+    "lower_body_use": {
+      "value": 33.27488798483492,
+      "unit": "degrees",
+      "estimated": true,
+      "confidence": 0.585,
+      "confidence_grade": "medium",
+      "method": "Left knee angle range; motion proxy only",
+      "reason": null
+    },
+    "weight_transfer": {
+      "value": 0.26666666666666655,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "method": "Horizontal hip displacement; not force or actual weight distribution",
+      "reason": null
+    },
+    "release_time": {
+      "value": 0.4,
+      "unit": "seconds",
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "method": "Maximum sampled 2D wrist speed; ball release unverified",
+      "reason": null
+    },
+    "follow_through": {
+      "value": 0.28170347259668127,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.25,
+      "confidence_grade": "low",
+      "method": "Wrist displacement after candidate release",
+      "reason": null
+    },
+    "balance": {
+      "value": 0.2576626505603322,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.25,
+      "confidence_grade": "low",
+      "method": "Hip offset from ankle midpoint; smaller is more centered",
+      "reason": null
+    },
+    "pitching_style": {
+      "value": "submarine",
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "method": "Heuristic throwing-arm elevation in image plane",
+      "reason": null
+    }
+  },
+  "ball_speed": null,
+  "usable_pose_frames": 8,
+  "role": "pitcher",
+  "summary": {
+    "pitching_style": {
+      "value": "submarine",
+      "unit": null,
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "method": "Heuristic throwing-arm elevation in image plane",
+      "reason": null
+    },
+    "balance": {
+      "value": 0.2576626505603322,
+      "unit": "torso_lengths",
+      "estimated": true,
+      "confidence": 0.25,
+      "confidence_grade": "low",
+      "method": "Hip offset from ankle midpoint; smaller is more centered",
+      "reason": null
+    }
+  },
+  "strengths": [],
+  "weaknesses": [],
+  "coaching": [],
+  "events": [
+    {
+      "timestamp": 0.4,
+      "role": "pitcher",
+      "type": "release",
+      "estimated": true,
+      "confidence": 0.2,
+      "confidence_grade": "low",
+      "candidate": true,
+      "metrics": {
+        "release_time": {
+          "value": 0.4,
+          "unit": "seconds",
+          "estimated": true,
+          "confidence": 0.2,
+          "confidence_grade": "low",
+          "method": "Maximum sampled 2D wrist speed; ball release unverified",
+          "reason": null
+        }
+      }
+    }
+  ],
+  "requested_role": "pitcher",
+  "status": "completed"
+}
