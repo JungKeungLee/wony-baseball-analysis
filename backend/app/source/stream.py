@@ -18,13 +18,16 @@ def validate_url(value):
 
 class StreamSource(VideoSource):
     def __init__(self,url):self.url=validate_url(url)
-    def arguments(self):
-        # HTTP redirects/manifest references still require deployment egress restrictions.
-        validate_url(self.url)
-        return ['-protocol_whitelist','http,https,tcp,tls,crypto','-rw_timeout','15000000','-i',self.url]
-    def sample(self,timestamp):return decode_image(self.arguments())
+    def arguments(self,url):
+        return ['-protocol_whitelist','http,tcp,crypto','-rw_timeout','15000000','-i',url]
+    def sample(self,timestamp):
+        from app.source.remote import Gateway
+        with Gateway(self.url,finite=False) as gateway:return decode_image(self.arguments(gateway.url))
     def capture(self,destination,timestamp,duration):
-        subprocess.run(['ffmpeg','-nostdin','-v','error','-y',*self.arguments(),'-t',str(duration),'-an',
-            '-vf','scale=320:320:force_original_aspect_ratio=decrease','-c:v','mpeg4',str(destination)],
-            capture_output=True,check=True,timeout=duration+30)
+        from app.source.remote import Gateway
+        with Gateway(self.url,finite=False) as gateway:
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-y',*self.arguments(gateway.url),'-t',str(duration),'-an',
+                '-vf','scale=320:320:force_original_aspect_ratio=decrease','-c:v','libx264','-threads','2',
+                '-pix_fmt','yuv420p','-movflags','+faststart',str(destination)],
+                capture_output=True,check=True,timeout=duration+30)
         return timestamp

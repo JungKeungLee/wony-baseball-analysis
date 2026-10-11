@@ -1,3 +1,4 @@
+import {addCaptureForm,appendCapture} from '/demo/capture.js';
 const el=id=>document.getElementById(id);
 let job=null,pollTimer=null,sourceURL=null;
 const roleNames={batter:'타격',defense:'수비',catcher:'포수',pitcher:'투수',baserunning:'주루',unknown:'역할 미확인'};
@@ -9,7 +10,7 @@ const running=data=>['queued','running'].includes(data.status);
 
 // 기본 화면의 선택지(영상/시간)를 고급 설정의 실제 API 값과 동기화한다.
 const radio=name=>document.querySelector(`input[name="${name}"]:checked`).value;
-function syncSource(){const url=radio('vod-source')==='url';el('vod-url-box').hidden=!url;el('vod-file-box').hidden=url;el('broadcast-scan').disabled=url;}
+function syncSource(){const url=radio('vod-source')==='url';el('vod-url-box').hidden=!url;el('vod-file-box').hidden=url;el('broadcast-scan').disabled=false;}
 function syncTime(){const approx=radio('vod-time')==='approx';el('vod-time-box').hidden=!approx;if(approx&&el('vod-mode').value==='auto')el('vod-mode').value='approximate';if(!approx)el('vod-mode').value='auto';}
 document.querySelectorAll('input[name="vod-source"]').forEach(r=>r.onchange=syncSource);
 document.querySelectorAll('input[name="vod-time"]').forEach(r=>r.onchange=syncTime);
@@ -22,7 +23,7 @@ function friendlyStatus(data){
  if(data.status==='running'){const p=data.progress?.total?` (${Math.round(100*data.progress.current/data.progress.total)}%)`:'';return data.stage==='SCAN'?`${demo}영상에서 야구 장면을 찾는 중입니다${p}…`:`${demo}찾은 야구 구간을 분석하는 중입니다${p}…`;}
  const n=data.baseball_segments.length;
  if(!n)return `${demo}야구 구간을 찾지 못했습니다. 대략적인 시간대를 알려주시거나 고급 설정에서 구간을 직접 지정해 보세요.`;
- const unknown=data.baseball_segments.filter(s=>s.role==='unknown').length;
+ const unknown=data.baseball_segments.filter(s=>s.role_selection_required===true).length;
  return `${demo}야구 구간 ${n}개를 찾았습니다.${unknown&&!data.synthetic_demo?' 아래에서 역할을 알려주시면 분석을 시작합니다.':''}`;
 }
 function roleCounts(data){
@@ -43,10 +44,10 @@ function render(data){
   const card=node('article',null,'segment-card');
   card.append(node('h3',`야구 구간 ${i+1} · ${clock(s.start)} ~ ${clock(s.end)} (${length(s.duration)})`));
   const done=data.analyses.filter(a=>a.segment_id===s.id);
-  const state=done.length?`분석 완료 · ${[...new Set(done.map(a=>roleNames[a.role]||a.role))].join(' · ')} ${done.length}회`:s.role==='unknown'?'역할 확인이 필요합니다':running(data)?'분석 대기 중':`${roleNames[s.role]||s.role} · 분석 결과 없음`;
+  const state=done.length?`분석 완료 · ${[...new Set(done.map(a=>roleNames[a.role]||a.role))].join(' · ')} ${done.length}회`:s.role==='unknown'?(running(data)?'역할 자동 판별 중':s.review_required?'야구 구간인지 확인이 필요합니다':s.display_role?roleNames[s.display_role]:'역할 확인이 필요합니다'):running(data)?'분석 대기 중':`${roleNames[s.role]||s.role} · 분석 결과 없음`;
   card.append(node('p',state));
-  if(s.role==='unknown'&&!data.synthetic_demo&&data.id&&!running(data)){
-   const ask=node('div',null,'ask');ask.append(node('p','이 구간에서 어떤 플레이를 했나요? 선택하면 바로 분석합니다.'));const chips=node('div',null,'chips');
+  if(s.role_selection_required===true&&!data.synthetic_demo&&data.id&&!running(data)){
+   const ask=node('div',null,'ask');ask.append(node('p','자동 역할 판별의 근거가 부족합니다. 이 구간의 역할을 선택하면 다시 분석합니다.'));const chips=node('div',null,'chips');
    for(const role of ['batter','defense','catcher','pitcher','baserunning']){const b=node('button',roleNames[role],'chip');b.onclick=()=>resubmit(segmentsPayload(data,{[s.id]:role}));chips.append(b);}
    ask.append(chips);card.append(ask);
   }
@@ -60,8 +61,10 @@ function render(data){
 }
 function view(segment){const v=el('broadcast-video');v.src=sourceURL||job.source_url;v.hidden=false;v.currentTime=segment.start;v.onloadedmetadata=()=>{v.currentTime=segment.start;};v.ontimeupdate=()=>{if(v.currentTime>=segment.end)v.pause();};}
 async function poll(id){clearTimeout(pollTimer);try{const data=await request(`/api/broadcasts/${id}`);render(data);if(running(data))pollTimer=setTimeout(()=>poll(id),1500);}catch(e){el('broadcast-status').textContent=e.message;}}
-el('broadcast-scan').onclick=async()=>{const file=el('broadcast-file').files[0];if(!file){el('broadcast-status').textContent='분석할 영상 파일을 선택하세요.';return;}el('broadcast-scan').disabled=true;el('broadcast-status').textContent='영상을 올리는 중입니다…';try{if(sourceURL)URL.revokeObjectURL(sourceURL);sourceURL=URL.createObjectURL(file);const form=new FormData();form.append('video',file);form.append('sample_interval',el('broadcast-interval').value);form.append('buffer',el('broadcast-buffer').value);const manual=el('broadcast-corrections').value.trim();if(manual)form.append('segments',manual);const mode=el('vod-mode').value;form.append('mode',mode);form.append('role',el('vod-role').value);if(mode!=='auto'){for(const [id,key] of [['vod-start','start'],['vod-end','end'],['vod-center','center_time']]){if(el(id).value.trim())form.append(key,el(id).value.trim());}form.append('buffer_minutes',el('vod-margin').value);form.append('search_window_minutes',el('vod-window').value);}const data=await request('/api/vod',{method:'POST',body:form});render(data);poll(data.id);}catch(e){el('broadcast-status').textContent=e.message;}finally{syncSource();}};
+el('broadcast-scan').onclick=async()=>{const file=el('broadcast-file').files[0];const url=radio('vod-source')==='url'?el('vod-url').value.trim():null;if(!file&&!url){el('broadcast-status').textContent='분석할 영상 파일을 선택하세요.';return;}el('broadcast-scan').disabled=true;el('broadcast-status').textContent='영상을 올리는 중입니다…';try{if(sourceURL)URL.revokeObjectURL(sourceURL);sourceURL=url||URL.createObjectURL(file);const form=new FormData();appendCapture(form,'vod-capture');if(url)form.append('source_url',url);else form.append('video',file);form.append('sample_interval',el('broadcast-interval').value);form.append('buffer',el('broadcast-buffer').value);const manual=el('broadcast-corrections').value.trim();if(manual)form.append('segments',manual);const mode=el('vod-mode').value;form.append('mode',mode);form.append('role',el('vod-role').value);if(mode!=='auto'){for(const [id,key] of [['vod-start','start'],['vod-end','end'],['vod-center','center_time']]){if(el(id).value.trim())form.append(key,el(id).value.trim());}form.append('buffer_minutes',el('vod-margin').value);form.append('search_window_minutes',el('vod-window').value);}const data=await request('/api/vod',{method:'POST',body:form});render(data);poll(data.id);}catch(e){el('broadcast-status').textContent=e.message;}finally{syncSource();}};
 el('broadcast-save').onclick=async()=>{try{await resubmit(JSON.parse(el('broadcast-corrections').value));}catch(e){el('broadcast-status').textContent=e.message;}};
 el('broadcast-example').onclick=async()=>{clearTimeout(pollTimer);sourceURL=null;render(await request('/api/broadcast-demo'));};
 
 const requestedJob=new URLSearchParams(location.search).get('job_id');if(requestedJob&&/^[0-9a-f-]{36}$/i.test(requestedJob))poll(requestedJob);
+
+addCaptureForm(document.getElementById('vod-advanced').querySelector('.advanced-body')||document.getElementById('vod-advanced'),'vod-capture');

@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 from app.analysis.engine import analyze_role
@@ -15,6 +15,7 @@ from app.models.storage import data_dir, save_result, player_records
 from app.scouting.report import build_report, aggregate_player_report
 from app.scouting.growth import compare_records, illustrative_demo_growth
 from app.models.result import AnalysisResult
+from app.api.capture import capture_metadata
 from app.pose.extractor import extract_pose
 from app.video.frames import InvalidVideo, extract_frames
 from app.visualization.builder import build_visualization
@@ -25,13 +26,14 @@ MAX_BYTES = 100 * 1024 * 1024
 logger = logging.getLogger(__name__)
 
 
-def process(path, analysis_id, hand, role='pitcher', position_type='auto', player_id=None, analysis_date=None, comparison_context=None):
+def process(path, analysis_id, hand, role='pitcher', position_type='auto', player_id=None, analysis_date=None, comparison_context=None, capture_context=None):
     frames = extract_frames(path)
     samples = extract_pose(frames)
-    return process_frames(frames, samples, analysis_id, hand, role, position_type, player_id=player_id, analysis_date=analysis_date, comparison_context=comparison_context)
+    from app.segments.detection import scene_context
+    return process_frames(frames, samples, analysis_id, hand, role, position_type, player_id=player_id, analysis_date=analysis_date, comparison_context=comparison_context,capture_context=capture_context,scene_context=scene_context(frames) if role=='auto' else None)
 
 
-def process_frames(frames, samples, analysis_id, hand, role='pitcher', position_type='auto', synthetic=False, player_id=None, analysis_date=None, comparison_context=None, stage_callback=None):
+def process_frames(frames, samples, analysis_id, hand, role='pitcher', position_type='auto', synthetic=False, player_id=None, analysis_date=None, comparison_context=None, stage_callback=None,scene_context=None,capture_context=None):
     if stage_callback:
         stage_callback('ROLE_ANALYSIS')
     result = {
@@ -44,8 +46,8 @@ def process_frames(frames, samples, analysis_id, hand, role='pitcher', position_
         'analysis_date': (analysis_date or datetime.now(ZoneInfo('Asia/Seoul')).date()).isoformat(),
         'date_source': 'user_provided' if analysis_date else 'server_date_Asia/Seoul',
         'created_at': datetime.now(timezone.utc).isoformat(),
-        'comparison_context': comparison_context, 'observation_method_version': 'pose-proxies-v1',
-        **analyze_role(samples, role, hand, position_type),
+        'comparison_context': comparison_context, 'capture_context': capture_context, 'observation_method_version': 'pose-proxies-v1',
+        **analyze_role(samples, role, hand, position_type,scene_context),
         'warnings': [
             'Single-camera 2D estimates; camera angle and occlusion affect all metrics.',
             'Confidence is a heuristic score, not a calibrated probability.',
@@ -74,14 +76,15 @@ def process_frames(frames, samples, analysis_id, hand, role='pitcher', position_
 async def create_demo(role: Literal['batter', 'defense', 'catcher', 'pitcher', 'baserunning'],
     player_id: str | None = Form(None, pattern=r'^[A-Za-z0-9_-]{1,64}$'),
     analysis_date: date | None = Form(None),
-    comparison_context: str | None = Form(None, min_length=1, max_length=80)):
+    comparison_context: str | None = Form(None, min_length=1, max_length=80),
+    capture_context: dict | None = Depends(capture_metadata)):
     from app.visualization.demo import synthetic_clip
     if not processing_lock.acquire(blocking=False):
         raise HTTPException(503, 'Another analysis is running; retry later')
     try:
         def run():
             frames, samples = synthetic_clip(role)
-            return process_frames(frames, samples, str(uuid4()), 'right', role, synthetic=True, player_id=player_id, analysis_date=analysis_date, comparison_context=comparison_context)
+            return process_frames(frames, samples, str(uuid4()), 'right', role, synthetic=True, player_id=player_id, analysis_date=analysis_date, comparison_context=comparison_context,capture_context=capture_context)
         return await run_in_threadpool(run)
     except Exception as exc:
         logger.exception('Synthetic demo generation failed')
@@ -99,6 +102,7 @@ async def create_analysis(
     player_id: str | None = Form(None, pattern=r'^[A-Za-z0-9_-]{1,64}$'),
     analysis_date: date | None = Form(None),
     comparison_context: str | None = Form(None, min_length=1, max_length=80),
+    capture_context: dict | None = Depends(capture_metadata),
     mode: Literal['single', 'auto_segments'] = Form('single'),
     segments: str | None = Form(None),
 ):
@@ -108,7 +112,7 @@ async def create_analysis(
         return await submit(video, defaults(), segments, {
             'throwing_hand': throwing_hand, 'position_type': position_type, 'player_id': player_id,
             'analysis_date': analysis_date.isoformat() if analysis_date else None,
-            'comparison_context': comparison_context})
+            'comparison_context': comparison_context, 'capture_context': capture_context})
     if not processing_lock.acquire(blocking=False):
         raise HTTPException(503, 'Another video is being analyzed; retry later')
     analysis_id = str(uuid4())
@@ -124,7 +128,7 @@ async def create_analysis(
                 target.write(chunk)
         if size == 0:
             raise HTTPException(422, 'Empty upload')
-        return await run_in_threadpool(process, path, analysis_id, throwing_hand, role, position_type, player_id, analysis_date, comparison_context)
+        return await run_in_threadpool(process, path, analysis_id, throwing_hand, role, position_type, player_id, analysis_date, comparison_context, capture_context)
     except InvalidVideo as exc:
         raise HTTPException(422, str(exc)) from exc
     except HTTPException:
@@ -150,7 +154,7 @@ def get_analysis(analysis_id: UUID):
 @router.get('/analysis/{analysis_id}/assets/{filename}')
 def get_asset(analysis_id: UUID, filename: str):
     import re
-    if not re.fullmatch(r'overlay\.mp4|keyframe-\d{4}\.jpg', filename):
+    if not re.fullmatch(r'(?:overlay|original)\.mp4|keyframe-\d{4}\.jpg', filename):
         raise HTTPException(404, 'Asset not found')
     root = data_dir()
     path = root / f'{analysis_id}-assets' / filename

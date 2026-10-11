@@ -90,3 +90,12 @@ a.mini-item:hover{color:var(--accent)}
 .angle-item .label{font-size:12px}
 @media(max-width:800px){.start-grid,.home-grid{grid-template-columns:1fr}.status-board{grid-template-columns:1fr}.summary-cards{grid-template-columns:1fr}.time-grid{grid-template-columns:1fr}.hero h1{font-size:28px}.simple-card{padding:18px}}
 #broadcast-status{margin-top:16px;font-size:14px}.angle-item .observed{font-size:18px}
+
+/* Scouting evidence stays inside the existing unified report. */
+.tool-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:16px 0}
+.tool-card{background:var(--panel,#12232b);border:1px solid #304349;border-radius:12px;padding:16px;min-width:0}
+.tool-card h3{margin:0 0 10px}.tool-card p{line-height:1.7;font-size:13px;overflow-wrap:anywhere}
+.tool-state{font-size:12px;color:#b1c4ca}.tool-card details{font-size:12px;overflow-wrap:anywhere}
+.tool-card button{margin-top:8px;width:100%;white-space:normal}.tool-observation{border-top:1px solid #304349;padding:8px 0}
+.scout-role-line{padding:12px 0;border-bottom:1px solid #304349}.scout-tools h2{letter-spacing:.06em}
+@media(max-width:540px){.tool-grid{grid-template-columns:1fr}}

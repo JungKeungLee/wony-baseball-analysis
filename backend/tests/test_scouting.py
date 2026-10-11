@@ -1,6 +1,7 @@
 from copy import deepcopy
 from datetime import date
 from uuid import uuid4
+import json
 import numpy as np
 import pytest
 from .test_roles import poses, client
@@ -16,7 +17,9 @@ def mock_video(monkeypatch,poses):
 
 
 def upload(client,role='batter',**fields):
-    return client.post('/api/analyze',data={'role':role,**fields},files={'video':('video.mp4',b'fixture')})
+    # Explicit conditions required by the evidence-first growth comparison policy.
+    capture={'camera_angle':'side','environment':'real','video_quality':'good','camera_motion':'fixed'}
+    return client.post('/api/analyze',data={'role':role,'capture_context':json.dumps(capture),**fields},files={'video':('video.mp4',b'fixture')})
 
 
 @pytest.mark.parametrize('role',['batter','defense','catcher','pitcher','baserunning'])
@@ -70,7 +73,9 @@ def test_insufficient_report_withheld(client,monkeypatch):
 
 
 def record(value,day,source=False,role='batter',context='same-side-camera'):
-    return {'id':str(uuid4()),'role':role,'analysis_date':f'2026-10-{day:02d}',
+    return {'id':str(uuid4()),'player_id':'PLAYER','role':role,'analysis_date':f'2026-10-{day:02d}',
+        'capture_context':{'camera_angle':'side','environment':'real','video_quality':'good','camera_motion':'fixed'},
+        'scouting_report':{'observation_window':{'duration_seconds':.7,'sample_count':8,'max_gap_seconds':.1}},
         'created_at':f'2026-10-{day:02d}T00:00:00+00:00','status':'completed',
         'synthetic_demo':source,'comparison_context':context,'observation_method_version':'pose-proxies-v1',
         'throwing_hand':'right','position_type':None,

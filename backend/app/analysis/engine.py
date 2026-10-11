@@ -10,13 +10,17 @@ from .shared.event_utils import event
 ANALYZERS = {'batter':batter,'defense':defense,'catcher':catcher,'pitcher':pitcher,'baserunning':baserunning}
 
 
-def analyze_role(samples, role='pitcher', hand='right', position_type='auto'):
-    if role == 'auto':
-        return dict(role='unknown',requested_role='auto',status='unknown_role',
-                    role_candidates=[metric(name,confidence=0,reason=None) for name in ANALYZERS],
-                    summary={},metrics={},events=[],strengths=[],weaknesses=[],coaching=[],
-                    usable_pose_frames=len(pose_rows(samples,hand)),
-                    role_estimate=metric('unknown',method='Automatic role classification is not implemented'))
+def analyze_role(samples, role='pitcher', hand='right', position_type='auto',scene_context=None):
+    requested=role
+    estimate=None
+    if role in {'auto','unknown'}:
+        from .shared.role_classifier import classify_role
+        estimate=classify_role(samples,scene_context)
+        role=estimate['value']
+        if role=='unknown':
+            return dict(role='unknown',requested_role=requested,status='unknown_role',
+                role_candidates=[metric(c['role'],confidence=c['confidence'],reason=None) for c in estimate['candidates']],summary={},metrics={},events=[],strengths=[],weaknesses=[],coaching=[],
+                usable_pose_frames=len(pose_rows(samples,hand)),role_estimate=estimate)
     if role not in ANALYZERS:
         raise ValueError('Unsupported role')
     result = ANALYZERS[role](samples,hand) if role=='pitcher' else ANALYZERS[role](samples,hand,position_type=position_type)
@@ -30,6 +34,7 @@ def analyze_role(samples, role='pitcher', hand='right', position_type='auto'):
         if idx is not None and result['metrics']['release_time']['value'] is not None:
             value=result['metrics']['release_time']['value']
             result['events']=[event({'t':value},'pitcher','release',{'release_time':result['metrics']['release_time']})]
-    result['requested_role']=role
+    result['requested_role']=requested
+    if estimate is not None:result['role_estimate']=estimate
     result['status']='completed' if result['usable_pose_frames']>=3 else 'insufficient_pose'
     return result

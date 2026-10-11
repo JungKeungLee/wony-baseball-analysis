@@ -34,7 +34,8 @@ def bundle(report_id):
             if analysis:
                 source=root/folder/key/'source.upload'
                 entries.append({'analysis':analysis,'start':ref.get('start',0),'end':ref.get('end'),
-                    'source_url':f'/api/reports/{key}/source' if source.is_file() else None,
+                    'source_url':f'/api/reports/{key}/source' if source.is_file() else ref.get('source_url'),
+                    'source_start':ref.get('source_start',ref.get('start',0)),
                     'timestamp_origin':'broadcast_relative' if kind=='vod' else 'session_elapsed'})
         if not entries:raise HTTPException(404,'No completed analyses for this report')
         return {'id':key,'kind':kind,'synthetic_demo':bool(manifest.get('synthetic_demo')),
@@ -44,7 +45,23 @@ def bundle(report_id):
 
 
 @router.get('/reports/{report_id}')
-def get_report(report_id:UUID):return bundle(report_id)
+def get_report(report_id:UUID):
+    from app.scouting.tools import aggregate_tools, build_tools
+    from copy import deepcopy
+    report=bundle(report_id)
+    results=[]
+    for entry in report['entries']:
+        analysis=entry['analysis']
+        scouting=analysis.get('scouting_report') or {}
+        if not scouting.get('player_tools'):
+            # Old records and their API payloads remain intact; compose a separate view.
+            extension=build_tools(analysis, scouting.get('plays') or [])
+            entry['scouting_extension']=extension
+            analysis=deepcopy(analysis)
+            analysis['scouting_report']=dict(scouting, **extension)
+        results.append(analysis)
+    report.update(aggregate_tools(results))
+    return report
 
 
 @router.get('/reports/{report_id}/source')

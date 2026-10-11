@@ -35,6 +35,7 @@ def persist(job):
     with LOCK:
         p=root()/job['id']/'job.json';temp=p.with_suffix('.tmp')
         temp.write_text(json.dumps(job,allow_nan=False),encoding='utf-8');temp.replace(p)
+        if job['status'] in {'completed','failed'}:ACTIVE.discard(job['id'])
 
 
 def update(job,stage,**values):
@@ -45,7 +46,11 @@ def update(job,stage,**values):
 
 
 def create(path,config,segments=None,metadata=None,vod_options=None):
-    duration=probe(path)
+    remote=isinstance(path,dict)
+    if remote:
+        from app.source.remote import open_remote
+        with open_remote(path['url']) as source:duration=probe(source.path)
+    else:duration=probe(path)
     selected=manual_segments(segments,duration) if segments is not None else None
     discovery=None
     if vod_options is not None:
@@ -53,14 +58,18 @@ def create(path,config,segments=None,metadata=None,vod_options=None):
         discovery,selected=discovery_plan(duration,**vod_options)
         config=dict(config,search_start=discovery['search_start'],search_end=discovery['search_end'])
     job_id=str(uuid4());folder=root()/job_id;folder.mkdir()
-    shutil.move(str(path),str(folder/'source.upload'))
+    if remote:
+        descriptor=folder/'remote.json'
+        descriptor.write_text(json.dumps(path),encoding='utf-8')
+        descriptor.chmod(0o600)
+    else:shutil.move(str(path),str(folder/'source.upload'))
     job={'id':job_id,'status':'queued','stage':'SCAN','stage_history':[], 'progress':{'current':0,'total':None},
          'video_duration':duration,'baseball_segments':selected or [],'config':config,'analyses':[],
-         'created_at':datetime.now(timezone.utc).isoformat(),'source_url':f'/api/broadcasts/{job_id}/source',
+         'created_at':datetime.now(timezone.utc).isoformat(),'source_url':None if remote else f'/api/broadcasts/{job_id}/source',
          'discovery':discovery,'input_mode':'vod','synthetic_demo':False,'metadata':metadata or {},'warnings':[
-             'Only confirmed segments with specified roles enter pose/scouting. Buffers may contain adjacent non-baseball content.',
+             'Only confirmed segments enter bounded pose classification; ambiguous roles do not receive scouting evaluations. Buffers may contain adjacent non-baseball content.',
              'Bounded clip coverage is explicit; this is not exhaustive play detection. Single subject/action engine limitations remain.',
-             'Source video is retained locally for correction. Delete the job to remove it; derived analyses require separate retention management.']}
+             'Uploaded sources are retained; URL inputs retain a private descriptor and processed clips only. Corrections require a valid URL; derived analyses have separate retention.']}
     with LOCK:
         if ACTIVE:
             shutil.rmtree(folder)
@@ -91,7 +100,15 @@ def run(job,do_scan):
     from app.source.file import FileSource
     from app.segments.execution import analyze_clip
     path=root()/job['id']/'source.upload'
+    from contextlib import ExitStack
+    resources=ExitStack()
     try:
+        remote=root()/job['id']/'remote.json'
+        if remote.exists():
+            from app.source.remote import open_remote
+            source=resources.enter_context(open_remote(json.loads(remote.read_text())['url']))
+            path=source.path
+        else:source=FileSource(path)
         job['status']='running'
         if do_scan:
             update(job,'SCAN')
@@ -100,9 +117,9 @@ def run(job,do_scan):
         update(job,'BASEBALL_SEGMENT_DETECTION')
         config=job['config'];plans=[]
         for segment in job['baseball_segments']:
-            segment['role_segments']=[{'start':segment['start'],'end':segment['end'],'role':segment['role'],
+            segment['role_segments']=[] if segment['role']=='unknown' else [{'start':segment['start'],'end':segment['end'],'role':segment['role'],
                 'confidence':segment['role_confidence'],'estimated':True,'source':segment['source']}]
-            if segment['review_required'] or segment['role']=='unknown':
+            if segment['review_required']:
                 segment['analysis_status']='review_required';continue
             segment['analysis_status']='planned'
             cursor=segment['start']
@@ -118,21 +135,43 @@ def run(job,do_scan):
             update(job,'SEGMENT_EXTRACTION',progress={'current':index,'total':len(plans)})
             clip=root()/job['id']/f'clip-{index}.mp4'
             try:
-                FileSource(path).capture(clip,start,end-start)
+                source.capture(clip,start,end-start)
                 result=analyze_clip(clip,segment['role'],job['metadata'],lambda stage:update(job,stage))
-                job['analyses'].append({'segment_id':segment['id'],'start':start,'end':end,'role':segment['role'],
+                inferred=result.get('role',segment['role'])
+                segment['role_segments'].append({'start':start,'end':end,'role':inferred,
+                    'confidence':result.get('role_estimate',{}).get('confidence'), 'estimated':True,'source':'automatic' if segment['role']=='unknown' else 'manual'})
+                if inferred=='unknown':
+                    segment['role_selection_required']=True
+                    segment['analysis_status']='review_required'
+                    persist(job);continue
+                if segment['role']=='unknown':segment['role_confidence']=result.get('role_estimate',{}).get('confidence')
+                job['analyses'].append({'segment_id':segment['id'],'start':start,'end':end,'role':inferred,
                     'analysis_id':result['id'],'analysis_url':f"/api/analysis/{result['id']}", 'status':result['status'],
                     'timestamp_origin':'clip_relative','broadcast_offset_seconds':start})
-                segment['analysis_status']='analyzed'
+                if remote.exists():
+                    assets=data_dir()/f"{result['id']}-assets"
+                    if assets.is_dir():
+                        shutil.copyfile(clip,assets/'original.mp4')
+                        job['analyses'][-1].update(source_url=f"/api/analysis/{result['id']}/assets/original.mp4",source_start=0)
+                if not segment.get('role_selection_required'):segment['analysis_status']='analyzed'
+                roles={a['role'] for a in job['analyses'] if a['segment_id']==segment['id']}
+                if len(roles)==1:segment['display_role']=next(iter(roles))
                 persist(job)
             finally:clip.unlink(missing_ok=True)
+        for segment in job['baseball_segments']:
+            roles={a['role'] for a in job['analyses'] if a['segment_id']==segment['id']}
+            if len(roles)==1 and segment.get('analysis_status')!='review_required':segment['role']=next(iter(roles))
         needs_review=any(s['analysis_status']=='review_required' or s.get('coverage')=='partial_budgeted' for s in job['baseball_segments'])
+        resources.close()
         update(job,'COMPLETE',status='completed',review_required=needs_review,progress={'current':len(plans),'total':len(plans)})
     except Exception:
         import logging
         logging.getLogger(__name__).exception('Broadcast job failed: %s',job['id'])
+        resources.close()
         update(job,'FAILED',status='failed',error='Scan/extraction/analysis failed; partial results and retained source remain available')
-    finally:ACTIVE.discard(job['id'])
+    finally:
+        resources.close()
+        if job['status'] not in {'completed','failed'}:ACTIVE.discard(job['id'])
 
 
 def defaults(sample_interval=10,merge_gap=20,buffer=10,threshold=.8,max_scan_frames=10000,max_analysis_clips=20,clip_seconds=10):

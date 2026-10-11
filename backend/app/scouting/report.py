@@ -87,6 +87,7 @@ def play_evaluations(result):
 
 
 def build_report(result):
+    from app.scouting.tools import build_tools
     role = ROLE_NAMES.get(result['role'])
     traits = [{'metric': name, 'observation': deepcopy(value), 'estimated': True,
                'confidence': value['confidence'], 'confidence_grade': value['confidence_grade']}
@@ -97,6 +98,7 @@ def build_report(result):
         else f'{role} 영상에서 2D 자세 관찰을 제공했습니다. 실제 경기 능력과 공식 스카우팅 점수는 판정하지 않습니다.')
     if result['synthetic_demo']:
         summary = 'DEMO · 합성 관절/영상이며 실제 선수 평가가 아닙니다. ' + summary
+    plays = play_evaluations(result)
     return {
         'player_id': result['player_id'], 'analysis_date': result['analysis_date'],
         'synthetic_demo': result['synthetic_demo'], 'estimated': True,
@@ -107,11 +109,13 @@ def build_report(result):
         'traits': traits, 'overall_summary': summary,
         'ratings': {name: None for name in CATEGORIES},
         'rating_reasons': {name: NO_SCORE if name == role else 'Role not analyzed' for name in CATEGORIES},
-        'role_evaluations': role_evaluations(result), 'plays': play_evaluations(result),
+        'role_evaluations': role_evaluations(result), 'plays': plays,
+        **build_tools(result, plays),
     }
 
 
 def aggregate_player_report(player_id, records, source):
+    from app.scouting.tools import aggregate_tools
     latest = {}
     for record in records:
         category = ROLE_NAMES.get(record['role'])
@@ -123,7 +127,7 @@ def aggregate_player_report(player_id, records, source):
         for target, key in [(strengths, 'strengths'), (development, 'development_areas'), (traits, 'traits')]:
             target.extend(dict(item, category=category, analysis_id=record['id'], analysis_date=record['analysis_date'])
                           for item in report.get(key, []))
-    return {'player_id': player_id, 'source': source, 'synthetic_demo': source == 'demo',
+    return {**aggregate_tools(records), 'player_id': player_id, 'source': source, 'synthetic_demo': source == 'demo',
         'overall_summary': ('DEMO · ' if source == 'demo' else '') +
             f'{len(records)}개 기록, {len(latest)}개 역할의 최근 관찰입니다. 선수의 실제 경기 능력을 점수로 확정하지 않습니다.',
         'rating_label': '영상 기반 참고 지표 — 프로 스카우터 공식 점수 아님',

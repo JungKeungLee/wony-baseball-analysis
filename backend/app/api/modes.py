@@ -3,31 +3,47 @@ import shutil
 import socket
 from uuid import UUID,uuid4
 from typing import Literal
-from fastapi import APIRouter,UploadFile,File,Form,HTTPException
+from fastapi import APIRouter,Depends,UploadFile,File,Form,HTTPException
 from pydantic import BaseModel,Field
 from starlette.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 from app.api.broadcasts import submit
 from app.segments.jobs import defaults
 from app.segments import jobs
 from app.live import sessions
 from app.video.frames import InvalidVideo
+from app.api.capture import capture_metadata
 
 router=APIRouter()
-Role=Literal['batter','defense','catcher','pitcher','baserunning','unknown']
+Role=Literal['batter','defense','catcher','pitcher','baserunning','unknown','auto']
 
 
 @router.post('/vod')
-async def vod(video:UploadFile=File(...),mode:Literal['exact','approximate','auto']=Form('auto'),
+async def vod(video:UploadFile|None=File(None),source_url:str|None=Form(None,max_length=4096),mode:Literal['exact','approximate','auto']=Form('auto'),
     start:str|None=Form(None),end:str|None=Form(None),center_time:str|None=Form(None),
     buffer_minutes:float=Form(10,ge=0,le=120),search_window_minutes:float=Form(60,ge=1,le=720),
     role:Role=Form('unknown'),segments:str|None=Form(None),
     sample_interval:float=Form(10,ge=5,le=60),max_scan_frames:int=Form(10000,ge=2,le=10000),
     max_analysis_clips:int=Form(20,ge=1,le=200),clip_seconds:float=Form(10,ge=1,le=30),
-    player_id:str|None=Form(None,pattern=r'^[A-Za-z0-9_-]{1,64}$')):
+    player_id:str|None=Form(None,pattern=r'^[A-Za-z0-9_-]{1,64}$'),
+    comparison_context:str|None=Form(None,min_length=1,max_length=80),
+    capture_context:dict|None=Depends(capture_metadata)):
+    role='unknown' if role=='auto' else role
+    if bool(video)==bool(source_url):raise HTTPException(422,'Provide exactly one video or source_url')
     options=None if segments is not None else dict(mode=mode,start=start,end=end,center_time=center_time,
         buffer_minutes=buffer_minutes,search_window_minutes=search_window_minutes,role=role)
+    if source_url:
+        try:
+            from app.source.remote import source_kind
+            await run_in_threadpool(source_kind,source_url)
+            result=await run_in_threadpool(jobs.create,{'url':source_url},defaults(sample_interval=sample_interval,
+                max_scan_frames=max_scan_frames,max_analysis_clips=max_analysis_clips,clip_seconds=clip_seconds),
+                json.loads(segments) if segments else None,{'player_id':player_id,'comparison_context':comparison_context,'capture_context':capture_context},options)
+            return JSONResponse(result,status_code=202)
+        except (ValueError,TypeError,InvalidVideo,socket.gaierror) as exc:
+            raise HTTPException(422,str(exc)) from exc
     return await submit(video,defaults(sample_interval=sample_interval,max_scan_frames=max_scan_frames,
-        max_analysis_clips=max_analysis_clips,clip_seconds=clip_seconds),segments,{'player_id':player_id},options)
+        max_analysis_clips=max_analysis_clips,clip_seconds=clip_seconds),segments,{'player_id':player_id,'comparison_context':comparison_context,'capture_context':capture_context},options)
 
 
 class LiveConfig(BaseModel):
@@ -44,11 +60,14 @@ class LiveConfig(BaseModel):
 
 @router.post('/live',status_code=202)
 async def live(source_url:str|None=Form(None,max_length=4096),video:UploadFile|None=File(None),
-               config:str=Form('{}'),player_id:str|None=Form(None,pattern=r'^[A-Za-z0-9_-]{1,64}$')):
+               config:str=Form('{}'),player_id:str|None=Form(None,pattern=r'^[A-Za-z0-9_-]{1,64}$'),
+    comparison_context:str|None=Form(None,min_length=1,max_length=80),
+    capture_context:dict|None=Depends(capture_metadata)):
     if bool(source_url)==bool(video):raise HTTPException(422,'Provide exactly one source_url or video replay')
     path=None
     try:
         settings=LiveConfig.model_validate(json.loads(config)).model_dump()
+        if settings['role']=='auto':settings['role']='unknown'
         if video:
             path=sessions.root()/f'{uuid4()}.upload';size=0
             with path.open('wb') as target:
@@ -56,7 +75,7 @@ async def live(source_url:str|None=Form(None,max_length=4096),video:UploadFile|N
                     size+=len(chunk)
                     if size>100*1024**2:raise HTTPException(413,'File replay maximum 100 MiB; use VOD for long files')
                     target.write(chunk)
-        return await run_in_threadpool(sessions.start,settings,source_url,path,{'player_id':player_id})
+        return await run_in_threadpool(sessions.start,settings,source_url,path,{'player_id':player_id,'comparison_context':comparison_context,'capture_context':capture_context})
     except (ValueError,TypeError,InvalidVideo,socket.gaierror) as exc:
         raise HTTPException(422,'Invalid LIVE config, public stream URL or replay video') from exc
     finally:
@@ -76,7 +95,7 @@ class RoleHint(BaseModel):role:Role
 
 
 @router.patch('/live/{session_id}/role')
-def live_role(session_id:UUID,hint:RoleHint):return sessions.set_role(session_id,hint.role)
+def live_role(session_id:UUID,hint:RoleHint):return sessions.set_role(session_id,'unknown' if hint.role=='auto' else hint.role)
 
 
 @router.post('/live/{session_id}/segments',status_code=202)

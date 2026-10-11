@@ -1,5 +1,27 @@
 """Compare like-for-like observations; do not infer player improvement from proxy deltas."""
 from app.scouting.report import ROLE_NAMES, CATEGORIES
+from app.scouting.context import comparison_reason
+import math
+
+
+def numeric_change(current, before, compatibility_reason, minimum_confidence=.4):
+    reason = compatibility_reason
+    if not reason:
+        if not before or not current.get('unit') or not current.get('method') or current.get('unit') != before.get('unit') or current.get('method') != before.get('method'):
+            reason = 'Observation units/methods differ'
+        elif any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+                 for v in [current.get('value'), before.get('value')]):
+            reason = 'Finite numeric observations required'
+        elif min(current.get('confidence', 0), before.get('confidence', 0)) < minimum_confidence:
+            reason = 'Observation confidence too low'
+    comparable = reason is None
+    confidence = min(current['confidence'], before['confidence']) if comparable else 0.0
+    return {'value': current.get('value'), 'previous_value': before.get('value') if before else None,
+        'delta': round(current['value']-before['value'], 6) if comparable else None,
+        'unit': current.get('unit'), 'estimated': True, 'confidence': confidence,
+        'confidence_grade': 'medium' if confidence >= .4 else 'low',
+        'comparable': comparable, 'reason': reason,
+        'interpretation': 'Image-proxy change only; not demonstrated skill improvement'}
 
 
 def compare_records(records):
@@ -11,34 +33,17 @@ def compare_records(records):
         group = (role, bool(r.get('synthetic_demo')))
         prior = previous.get(group)
         context = r.get('comparison_context')
+        compatibility_reason = comparison_reason(r, prior)
         comparisons = {}
         for name, m in r.get('metrics', {}).items():
             before = prior.get('metrics', {}).get(name) if prior else None
-            reason = None
-            if not prior:
-                reason = 'No previous analysis for this role and source'
-            elif not context or context != prior.get('comparison_context'):
-                reason = 'Same explicit camera/task comparison_context required'
-            elif r['status'] != 'completed' or prior['status'] != 'completed':
-                reason = 'Both analyses must have sufficient pose'
-            elif r.get('observation_method_version') != prior.get('observation_method_version') or not r.get('observation_method_version'):
-                reason = 'Observation method versions differ or are unknown'
-            elif r.get('throwing_hand') != prior.get('throwing_hand') or r.get('position_type') != prior.get('position_type'):
-                reason = 'Throwing hand or fielding position differs'
-            elif not before or m.get('unit') != before.get('unit') or m.get('method') != before.get('method'):
-                reason = 'Observation units/methods differ'
-            elif any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in [m.get('value'), before.get('value')]):
-                reason = 'Numeric observations required'
-            elif min(m.get('confidence', 0), before.get('confidence', 0)) < .4:
-                reason = 'Observation confidence too low'
-            comparable = reason is None
-            comparisons[name] = {'value': m.get('value'), 'previous_value': before.get('value') if before else None,
-                'delta': round(m['value']-before['value'], 6) if comparable else None,
-                'unit': m.get('unit'), 'estimated': True,
-                'confidence': min(m['confidence'], before['confidence']) if comparable else 0.0,
-                'confidence_grade': 'medium' if comparable else 'low',
-                'comparable': comparable, 'reason': reason,
-                'interpretation': 'Image-proxy change only; not demonstrated skill improvement'}
+            comparisons[name] = numeric_change(m, before, compatibility_reason)
+        tool_changes = {}
+        for name, tool in (r.get('scouting_report') or {}).get('player_tools', {}).items():
+            old_tool = ((prior or {}).get('scouting_report') or {}).get('player_tools', {}).get(name, {})
+            old_observations = {m['metric']: m for m in old_tool.get('observations', [])}
+            tool_changes[name] = {m['metric']: numeric_change(m, old_observations.get(m['metric']), compatibility_reason, .2)
+                for m in tool.get('observations', [])}
         points.append({'analysis_id': r['id'], 'analysis_date': r['analysis_date'], 'role': role,
             'synthetic_demo': r['synthetic_demo'], 'previous_analysis_id': prior['id'] if prior else None,
             'comparison_context': context, 'ratings': r.get('ratings', {}),
@@ -48,6 +53,8 @@ def compare_records(records):
                 'estimated': True, 'confidence': 0.0, 'confidence_grade': 'low',
                 'reason': 'No validated reference scoring model; observations are stored separately'}
                 for category, metrics in CATEGORIES.items() for key in metrics},
+            'comparison_compatible': compatibility_reason is None, 'comparison_reason': compatibility_reason,
+            'capture_context': r.get('capture_context'), 'tool_changes': tool_changes,
             'observations': comparisons})
         previous[group] = r
     return points

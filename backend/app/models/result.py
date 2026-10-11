@@ -110,6 +110,31 @@ class PlayEvaluation(BaseModel):
     visualization_reference: dict[str, Any]
 
 
+class ScoutingObservation(BaseModel):
+    metric: str
+    status: Literal['measured', 'estimated', 'insufficient_data', 'not_supported']
+    value: float | str | bool | None
+    unit: str | None
+    estimated: Literal[True]
+    confidence: float = Field(ge=0, le=1)
+    confidence_grade: Literal['high', 'medium', 'low']
+    method: str | None
+    reason: str | None
+
+
+class ToolAssessment(BaseModel):
+    status: Literal['measured', 'estimated', 'insufficient_data', 'not_supported']
+    score: None = None
+    grade: None = None
+    estimated: Literal[True]
+    confidence: float = Field(ge=0, le=1)
+    confidence_grade: Literal['high', 'medium', 'low']
+    summary: str
+    observations: list[ScoutingObservation]
+    evidence: list[dict[str, Any]]
+    reason: str
+
+
 class ScoutingReport(BaseModel):
     player_id: str | None
     analysis_date: str
@@ -125,6 +150,17 @@ class ScoutingReport(BaseModel):
     rating_reasons: dict[str, str]
     role_evaluations: dict[str, RoleEvaluation]
     plays: list[PlayEvaluation]
+    player_tools: dict[str, ToolAssessment] = Field(default_factory=dict)
+    additional_evaluations: dict[str, ToolAssessment] = Field(default_factory=dict)
+    proxy_metrics: dict[str, Metric] = Field(default_factory=dict)
+    role_summary: dict[str, Any] = Field(default_factory=dict)
+    best_tool: None = None
+    development_area: None = None
+    play_style: None = None
+    classification_reason: str | None = None
+    tools_method_version: str | None = None
+    movement_signature: dict[str, Any] | None = None
+    observation_window: dict[str, Any] | None = None
 
 
 class AnalysisResult(BaseModel):

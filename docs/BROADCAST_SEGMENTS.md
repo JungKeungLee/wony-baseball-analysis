@@ -1,3 +1,5 @@
+최신 VOD URL/자동 역할/복합 탐지는 [ENGINE_INPUTS.md](ENGINE_INPUTS.md)를 먼저 읽으세요.
+
 # 긴 방송의 야구 구간 탐지 레이어
 
 기존 60초 단일 영상 API/다섯 역할/2D·3D·scouting은 유지합니다. 새 기능은 원본을 저비용 스캔하고 구간만 추출해서 기존 엔진에 전달합니다. 방송 전체의 콘텐츠나 출연자를 평가하지 않습니다.
@@ -34,13 +36,13 @@ curl -X DELETE http://localhost:8000/api/broadcasts/JOB_UUID
 
 ## 탐지 근거와 현재 한계
 
-`segments/detection.py`의 SignalDetector는 pose 없이 축소 화면을 검사합니다. 기본은 녹색 그라운드 **색상 후보**만 제공하며 후보 confidence≤0.49, review_required=true입니다. 녹색 배경/일반 게임 화면은 야구로 확정하지 않습니다. 색상 단서가 없는 야구 방송은 놓칠 수 있습니다.
+SignalDetector/evidence는 LIVE/VOD 공통입니다. 축소 프레임의 색상 맥락, 선택 COCO 객체 모델, 선택 field/UI/scoreboard 장면 모델, 최근6개의 희소 pose 움직임을 조합합니다. 색상·자세·공·스코어보드 한 가지로 야구를 확정하지 않습니다.
 
-선택 옵션 `WONY_SEGMENT_ONNX`에 사용자가 제공한 로컬 **YOLOv8 COCO raw ONNX [1,84,N]** 모델 경로를 설정하면 OpenCV DNN으로 bat/glove/sports-ball 신호를 추가합니다. letterbox 640 입력, RGB/255, COCO 클래스 34/35/32 형식만 지원합니다. 모델 다운로드나 임의 파일 신뢰 설정은 하지 않습니다. 서로 다른 포맷의 ONNX는 지원하지 않습니다.
+객체 모델 `WONY_SEGMENT_ONNX`는 YOLOv8 COCO raw `[1,84,N]`이며 RGB letterbox640, bat34/glove35/sports-ball32 형식입니다. 장면 모델 `WONY_SCENE_ONNX`는 field/baseball_ui/scoreboard 세 class의 raw `[1,7,N]`입니다. 가중치는 포함하거나 런타임 다운로드하지 않으며 별도 준비·검증해야 합니다. 두 모델이 없으면 색상/자세는 confidence≤0.49의 검토 후보입니다.
 
-배트≥0.8 + 글러브≥0.8 + 그라운드색≥0.25의 다중 근거가 있을 때만 threshold≥0.8을 넘는 야구 후보를 허용합니다. 공은 다른 스포츠 공일 수 있으므로 확정 근거가 아닙니다. confidence는 휴리스틱이며 정확도/확률이 아닙니다. 모델 가중치를 이번 구현에 포함하지 않았고 실제 방송/VR 객체 탐지 정확도는 검증하지 않았습니다. 과도하게 엄격한 기준으로 놓치는 구간이 있을 수 있습니다.
+기존 bat+glove+field 외에 temporal motion+장비+field/UI, 학습된 field+UI+motion 조합을 허용합니다. 상세 임계값/보안/지원 범위는 [ENGINE_INPUTS.md](ENGINE_INPUTS.md). 실제 홈플레이트·베이스·접촉·VR 정확도는 검증하지 않았습니다.
 
-홈플레이트·베이스·스코어보드·VR 게임 UI·반복 동작/자세 신호와 자동 역할 분류는 **아직 미구현**입니다. detector의 신호 딕셔너리와 evidence 결합 규칙을 확장할 수 있습니다. 자동 구간의 role은 unknown/confidence=0으로 보류하며 **정밀 분석하지 않습니다**. 사용자가 야구 구간/역할을 확인해야 현재 정밀 분석이 진행됩니다. 수동 선언은 source=manual/confidence=null이며 모델 탐지 성공으로 표시하지 않습니다. 내부 역할 구간은 사람이 구간을 나눠 지정합니다.
+야구 confidence가 충분한 구간의 unknown/auto 역할은 짧은 클립 pose로 자동 추정합니다. 역할 근거가 부족하면 평가를 보류하고 role_selection_required를 반환합니다. role_segments는 클립별 자동 역할을 기록하며 여러 역할이 섞인 구간의 대표 role은 unknown일 수 있습니다. 수동 선언은 source=manual/confidence=null이며 모델 탐지 성공으로 표시하지 않습니다.
 
 ## 비용, 경계, 정밀 분석
 
@@ -54,7 +56,7 @@ curl -X DELETE http://localhost:8000/api/broadcasts/JOB_UUID
 
 ## 저장과 복구
 
-data/broadcasts/{job_uuid}/에 source.upload와 원자적으로 저장한 job.json을 보관합니다. 전체 방송은 수정용으로 남으며 `.gitignore`의 data/로 제외됩니다. 정밀 분석의 임시 clip은 완료/실패 후 삭제합니다. 인증·사용자별 접근/디스크 총량 제한·외부 작업 큐는 미구현이므로 공개 배포용 기능은 아닙니다.
+업로드는 data/broadcasts/{job_uuid}/source.upload와 job.json, URL VOD는 비공개 remote.json과 job.json을 보관합니다. 업로드 전체 원본은 수정용으로 남고 URL 전체는 저장하지 않으며 처리 클립만 original.mp4 자산으로 남습니다. 모두 `.gitignore`의 data/로 제외됩니다. 정밀 분석의 임시 clip은 완료/실패 후 삭제합니다. 인증·사용자별 접근/디스크 총량 제한·외부 작업 큐는 미구현이므로 공개 배포용 기능은 아닙니다.
 
 단일 프로세스의 background thread, 방송 작업 하나와 단일 pose 처리 lock을 사용합니다. 프로세스 재시작 후 미완료 작업은 interrupted로 표시하고 원본을 유지합니다. 자동 재개는 없으며 수동 구간 수정으로 재분석할 수 있습니다. 재분석은 기존 파생 분석을 삭제하지 않습니다. DELETE job은 원본/작업만 지우며 기존 분석 JSON/영상 자산은 별도 보관 정책이 필요합니다.
 
@@ -64,6 +66,6 @@ data/broadcasts/{job_uuid}/에 source.upload와 원자적으로 저장한 job.js
 
 DEMO 타임라인의 10시간·91% 예시는 임의 데이터이며 실제 탐지 결과가 아닙니다. source와 정밀 분석은 없습니다. [화면 캡처](screenshots/broadcast.png)도 DEMO입니다.
 
-pytest 85개 통과(기존 72+새13). 다중신호, 병합/버퍼, 타임코드/잘못된 구간, 스캔 예산, unknown/review 분석 금지, 수동 core 구간/클립 예산/시간 오프셋, 수정/삭제/실패를 검증합니다. `frontend-demo`에서 `npm run test:broadcast`: 실제 ffmpeg 검은 영상 스캔→야구 없음→분석 없음, 수동 지정→MediaPipe 부족 pose→기존 결과 화면, 타임라인/수정/모바일 확인. 합성 테스트/사람 없는 영상은 실제 방송 탐지 정확도의 증거가 아닙니다.
+최신 pytest129개 통과(기존105+입력/역할/복합 탐지24). 다중신호, 병합/버퍼, 타임코드/잘못된 구간, 스캔 예산, review 분석 금지/unknown 자동 역할 추정 실패 시 평가 보류, 수동 core 구간/클립 예산/시간 오프셋, 수정/삭제/실패를 검증합니다. `frontend-demo`에서 `npm run test:broadcast`: 실제 ffmpeg 검은 영상 스캔→야구 없음→분석 없음, 수동 지정→MediaPipe 부족 pose→기존 결과 화면, 타임라인/수정/모바일 확인. 합성 테스트/사람 없는 영상은 실제 방송 탐지 정확도의 증거가 아닙니다.
 
 LIVE/VOD 입력 확장 및 최신 테스트는 [LIVE_VOD.md](LIVE_VOD.md)를 참고하세요. 공통 source adapter와 execution bridge를 재사용합니다.

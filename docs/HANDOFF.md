@@ -1,6 +1,6 @@
 # wony-baseball-analysis — 최신 인수인계
 
-이 문서는 현재 로컬 소스 기준입니다. 이전 버전별 설명을 합쳐 **통합 리포트 UI / LIVE·VOD / 105개 테스트** 기준으로 정리했습니다. FastAPI 버전 표기는 0.4.0, 신규 단일 분석 응답 schema_version은 0.4.0입니다.
+이 문서는 현재 로컬 소스 기준입니다. 이전 버전별 설명을 합쳐 **통합 리포트 UI / LIVE·VOD URL / 자동 역할 / 172개 테스트** 기준으로 정리했습니다. FastAPI 버전 표기는 0.4.0, 신규 단일 분석 응답 schema_version은 0.4.0입니다.
 
 WONY PHONE과 분리된 독립 Python 야구 영상 분석 MVP입니다. 현재 작업 목표는 **Claude Code에서 Windows 로컬 실행과 확인**입니다. WONY PHONE 통합, 새 기능 추가, commit/push는 승인되지 않았습니다.
 
@@ -33,6 +33,9 @@ wony-baseball-analysis/
         base.py                   # provider 중립 sample/capture 인터페이스
         file.py                   # seek 가능한 파일 입력
         stream.py                 # HTTP(S) 스트림 입력
+        direct_video.py / hls.py   # seek 가능한 VOD URL 어댑터
+        remote.py                 # redirect/HLS URI 검증·public-IP 고정 gateway
+        providers/base.py         # 향후 플랫폼 페이지 adapter 인터페이스
       segments/
         detection.py              # 저비용 신호 탐지, 병합, 시간/구간 검증
         vod.py                    # VOD 탐색 범위 계산
@@ -45,21 +48,22 @@ wony-baseball-analysis/
       pose/extractor.py           # MediaPipe Pose 관절 좌표
       analysis/
         engine.py                 # 공통 role 라우팅
-        shared/                   # 각도/pose 지표/confidence/event/fielding
+        shared/                   # 각도/pose 지표/confidence/event/fielding/자동 역할
         batter/analyzer.py
         defense/{analyzer,infielder,outfielder}.py
         catcher/analyzer.py
         pitcher/analyzer.py
         baserunning/analyzer.py
-      scouting/{report,growth}.py  # 근거 기반 리포트와 조건부 이력 비교
+      scouting/{report,growth,tools,proxies,context}.py  # 근거 기반 리포트와 조건부 이력 비교
       visualization/              # 2D overlay, 3D 상대 좌표, keyframe, DEMO
       models/{result,storage}.py   # Pydantic 응답 계약, 원자적 JSON 저장
     requirements.txt              # 고정 Python 의존성
-    tests/                        # 7개 test 파일, 현재 105개 테스트
+    tests/                        # 9개 test 파일, 현재 172개 테스트
   frontend-demo/
     index.html / dashboard.js     # 메인 대시보드, 짧은 영상 분석 시작
     broadcast/index.html          # 한 화면의 LIVE/VOD 탭
     broadcast.js / live.js / broadcast-tabs.js
+    capture.js                    # 공통 촬영 조건 입력/metadata 제출
     analyses/index.html / records.js
     analysis.html / report.js     # 종합·역할·플레이 시각화를 한 페이지에
     live/index.html               # 이전 URL 호환용 이동 안내
@@ -170,7 +174,7 @@ process_frames → analysis.engine.analyze_role
 
 계산은 `analysis/shared`를 재사용합니다. 공·배트 접촉/실제 글러브/반응 자극/깊이 보정이 필요한 항목은 null입니다. 타자 stance_type, bat_start_position, hands_lead, impact_time, wrist_angle, whiff/contact/foul_or_in_play/pull_or_opposite 등은 실제 성과로 판정하지 않습니다. 미트/글러브 위치는 손목 대리값입니다. 회전/체중 이동은 2D 관찰이지 실제 힘·발 압력 측정이 아닙니다.
 
-`auto`는 분류기 미구현으로 unknown과 confidence 0 후보를 반환합니다. 단일 영상 role 기본은 기존 호환을 위해 pitcher입니다. confidence는 검증된 확률이 아닙니다. 모든 metric은 value/unit/estimated/confidence/confidence_grade/method/reason이며 null을 0이나 실패로 바꾸지 마세요. grade는 high≥0.75, medium≥0.4, 나머지 low입니다.
+`auto`는 연속 pose·움직임·객체 맥락의 보수적 역할 휴리스틱입니다. 최소5개 유효 pose/0.4초, confidence≥0.70와 후보 차이≥0.15를 만족해야 역할을 선택하며 그 외 unknown입니다. 구현/검증 한계는 [ENGINE_INPUTS.md](ENGINE_INPUTS.md)를 먼저 확인하세요. 단일 영상 role 기본은 기존 호환을 위해 pitcher입니다. confidence는 검증된 확률이 아닙니다. 모든 metric은 value/unit/estimated/confidence/confidence_grade/method/reason이며 null을 0이나 실패로 바꾸지 마세요. grade는 high≥0.75, medium≥0.4, 나머지 low입니다.
 
 ## 7. 2D/3D와 플레이 연결
 
@@ -186,6 +190,8 @@ process_frames → analysis.engine.analyze_role
 
 ## 8. Scouting report와 성장 추적
 
+5툴 구현 전 점검은 [SCOUTING_GAP.md](SCOUTING_GAP.md), 계산식·JSON 계약·한계는 [SCOUTING_TOOLS.md](SCOUTING_TOOLS.md)를 먼저 읽으세요. `player_tools`에 CONTACT/POWER/SPEED/FIELDING/ARM을 추가했고 `additional_evaluations`, `proxy_metrics`, `role_summary`, 근거 플레이 참조와 성장 `tool_changes`를 제공합니다. 모든 score/grade/BEST TOOL/PLAY STYLE은 근거 부족으로 null입니다. measured는 보정 측정 adapter용 예약 상태이고 현재 새 수치는 estimated 영상 대리 지표입니다.
+
 `scouting/report.py`의 scouting_report는 player_id/date/source, strengths/development_areas/traits/overall_summary, ratings/rating_reasons, role_evaluations, plays를 제공합니다. rating 그룹은 batting/defense/catching/pitching/baserunning입니다.
 
 역할별 평가 항목:
@@ -200,7 +206,7 @@ process_frames → analysis.engine.analyze_role
 
 plays는 이벤트 후보, keyframe, 시각화 참조, confidence 및 국소 feedback을 연결합니다. 해당 시각 샘플 차이가 0.051초 이내인 프레임만 연결하고 대응 keyframe이 없으면 null입니다. 현재 국소 장단점은 빈 배열이 정상이며 전체 영상 feedback은 context_feedback.scope=whole_clip로 분리합니다.
 
-`scouting/growth.py`는 같은 선수/역할/source의 이전 관찰을 비교합니다. comparison_context가 같고 비어 있지 않으며, completed/방법 버전/손/포지션/단위/계산 방법이 같고 양쪽 confidence≥0.4인 숫자만 delta를 생성합니다. 나머지는 null+reason. source=real과 demo는 분리합니다. 날짜 기본은 Asia/Seoul의 오늘, created_at은 UTC; tzdata는 Windows 시간대 지원에 필요합니다.
+`scouting/growth.py`는 같은 선수/역할/source의 이전 관찰을 비교합니다. comparison_context와 선택적 capture_context(camera_angle/environment/vr_environment/video_quality/camera_motion/projection)를 모두 명시해야 수치 비교를 허용합니다. 고정 카메라·동일 각도/환경/VR/화질·flat 투영, completed/방법 버전/손/포지션/단위/계산 방법이 같아야 합니다. 관측 시간/usable pose 수가10% 넘게 다르거나 gap>0.25초면 비교 불가입니다. point의 comparison_compatible/reason/tool_changes에 결과가 있으며, 기존 observation은 confidence≥0.4, 새 tool proxy는≥0.2인 숫자만 delta를 생성합니다. 낮은 신뢰도의 이미지 변화이며 능력 향상은 아닙니다. 누락 조건도 null+reason입니다. source=real과 demo는 분리합니다. 날짜 기본은 Asia/Seoul의 오늘, created_at은 UTC; tzdata는 Windows 시간대 지원에 필요합니다.
 
 criterion_scores와 rating_deltas는 아직 null입니다. `/api/demo/growth`의 62→71→77(+9/+6)는 confidence 0의 임의 DEMO 예시이며 실제 기록에 저장하지 않습니다. 변화는 실제 기량 향상 판정이 아닙니다.
 
@@ -208,17 +214,18 @@ criterion_scores와 rating_deltas는 아직 null입니다. `/api/demo/growth`의
 
 **LIVE/VOD는 별도 자세 분석기를 만들지 않습니다.** source adapter/구간 discovery만 다르고 SignalDetector/evidence 및 `segments/execution.py` 이후 엔진은 공유합니다.
 
-- VOD exact: 사람 확인 start/end와 role 지정, 스캔 생략. unknown은 보류.
+- VOD exact: 사람 확인 start/end, 스캔 생략. role=auto/unknown은 확인된 야구 클립에서 자동 역할 추정, 실패할 때만 역할 선택 요청.
 - approximate: start/end+buffer_minutes 또는 center_time±search_window_minutes/2만 저비용 스캔. 범위 밖은 스캔/분석하지 않음.
-- auto: 전체 저비용 스캔. 자동 역할은 unknown이므로 수정/확인 후 정밀 분석.
+- auto: 전체 저비용 스캔. 다중근거 확인 구간만 공통 엔진으로 넘겨 클립별 역할을 추정. 낮은 야구 confidence 후보는 보류.
 - 기본 스캔10초(5~60 설정), 최대10,000 프레임 예산, 가까운 후보 병합과 앞뒤10초 미리보기 buffer. 실제 분석은 core 범위만.
 - 기본 정밀 클립10초·최대20개, 최대 설정30초·200개. 초과는 partial_budgeted/review_required. 전체 긴 구간을 다 분석했다는 뜻이 아님.
+- VOD는 업로드 파일 또는 공개 직접 MP4/종료된 HLS URL 중 하나. URL도 지정 탐색 범위만 스캔하며 URL 전체를 저장하지 않고 처리 클립만 보관. 플랫폼 페이지는 provider adapter 필요/현재 미지원.
 - 방송 파일 최대24시간, 업로드 기본8GiB. WONY_BROADCAST_MAX_BYTES로 한도 설정 가능하나 메모리/디스크/실제 부하 확인 필요.
 - LIVE HTTP(S) stream URL 또는 파일 리플레이(100MiB). 플랫폼 웹페이지 URL 해석/플랫폼 adapter는 미지원.
 - LIVE: IDLE→WATCHING→BASEBALL_CANDIDATE→BASEBALL_ANALYZING→BASEBALL_ENDING→REPORT_GENERATING→WATCHING. 기본10초 감시, 30초 반복확인/최소3hit, 종료유예240초(180~600 설정). 무신호 유예에는 pose/scouting 미실행.
-- 알려진 사람 역할 힌트+다중근거 때만 LIVE 클립 획득. 캡처 클립도 5초 간격/끝 프레임 재검사 후 기존 엔진으로 넘김. stop은 제한시간 있는 현재 입력/분석 완료 후 종료.
+- 반복 다중근거 확인 후 LIVE 클립 획득; 수동 힌트가 없으면 연속 pose로 자동 역할 추정. 캡처 클립도 5초 간격/끝 프레임 재검사 후 기존 엔진으로 넘김. stop은 제한시간 있는 현재 입력/분석 완료 후 종료.
 
-기본 탐지기는 **그라운드색 후보뿐**이고 confidence≤0.49/review_required입니다. 이것만으로 LIVE 정밀 분석은 활성화되지 않습니다. 선택 `WONY_SEGMENT_ONNX`는 로컬 YOLOv8 COCO raw ONNX [1,84,N] 경로입니다. 모델은 포함하지 않았습니다. bat≥0.8+glove≥0.8+field≥0.25, threshold≥0.8의 다중근거 규칙을 사용합니다. 공 단독은 확정 근거가 아닙니다. 실제 객체/VR UI 탐지 정확도는 미검증입니다.
+탐지기는 색상 맥락+선택 ONNX 객체/장면 모델+최근6개의 작은 프레임 pose 움직임을 조합합니다. WATCHING에서 전체 clip pose/scouting은 실행하지 않습니다. 모델 없이 색상/자세만으로는 야구를 확정하지 않습니다. `WONY_SEGMENT_ONNX`는 COCO raw ONNX [1,84,N], `WONY_SCENE_ONNX`는 field/baseball_ui/scoreboard 3-class [1,7,N]이며 가중치는 별도 준비/검증이 필요합니다. bat+glove+field 또는 motion+장비+field/UI 또는 학습된 field+UI+motion 조건을 사용합니다. 실제 정확도는 미검증입니다. 자세한 API·모델 계약·보안·지원 범위는 [ENGINE_INPUTS.md](ENGINE_INPUTS.md).
 
 진행: SCAN→BASEBALL_SEGMENT_DETECTION→SEGMENT_EXTRACTION→ROLE_ANALYSIS→POSE_ANALYSIS→SCOUTING_REPORT→COMPLETE. 역할 선택 단계 뒤 실제 pose 기반 역할 계산은 공통 엔진에서 수행됩니다. 대상 없으면 정밀 단계를 건너뜁니다. 프로세스 재시작은 interrupted이며 자동 재개는 미구현입니다.
 
@@ -230,7 +237,7 @@ criterion_scores와 rating_deltas는 아직 null입니다. `/api/demo/growth`의
 | GET /api/analysis/{id} | 저장된 개별 결과 그대로 재조회 |
 | GET /api/analysis/{id}/assets/{filename} | 제한된 overlay/keyframe 자산 |
 | POST /api/demo/{role} | 다섯 역할 synthetic_demo=true |
-| POST /api/vod | exact/approximate/auto 또는 수동 segments |
+| POST /api/vod | video 또는 source_url; exact/approximate/auto 또는 수동 segments |
 | POST /api/broadcasts, GET /api/broadcasts/{id} | 긴 영상 생성/진행 조회; GET /broadcasts 목록은 없음 |
 | POST /api/broadcasts/{id}/segments | 보정 후 재분석 |
 | GET /api/broadcasts/{id}/source, DELETE /api/broadcasts/{id} | 원본/작업 보관 관리 |
@@ -240,6 +247,8 @@ criterion_scores와 rating_deltas는 아직 null입니다. `/api/demo/growth`의
 | DELETE /api/live/{id} | 종료 세션/리플레이 삭제 |
 | GET /api/reports, GET /api/reports/{id}, GET /api/reports/{id}/source | 읽기 전용 목록/통합 결과/보관 원본 |
 | GET /api/players/{id}/history, /api/players/{id}/scouting-report | 선수 이력/역할별 최신 종합 |
+
+`/api/analyze`, `/api/vod`, `/api/live`, `/api/demo/{role}`에서 선택적 capture_context JSON을 받으며 잘못된 조건은422입니다. LIVE/VOD에서도 같은 metadata가 공통 엔진과 수동 재분석에 보존됩니다. UI의 고급 설정에서 촬영 조건을 입력합니다.
 
 단일 업로드 role=batter/defense/catcher/pitcher/baserunning/auto, throwing_hand=right|left, position_type=auto|infielder|outfielder. 선수 ID는 ASCII 영숫자/_/- 1~64자, analysis_date는 ISO 날짜, comparison_context는1~80자입니다.
 
@@ -253,15 +262,15 @@ curl.exe -X POST http://127.0.0.1:8000/api/analyze -F "video=@C:\clips\bat.mp4" 
 
 ## 11. 저장/보관/운영
 
-기본 data에 {id}.json, {id}-assets/overlay.mp4·keyframe JPG, broadcasts/{job}/job.json·source.upload, live/{session}/session.json·선택 source.upload를 저장합니다. WONY_DATA_DIR로 변경할 때는 **절대 경로와 쓰기 권한**을 확인하세요.
+기본 data에 {id}.json, {id}-assets/overlay.mp4·keyframe JPG, broadcasts/{job}/job.json·source.upload, live/{session}/session.json·선택 source.upload를 저장합니다. URL VOD는 broadcasts/{job}/remote.json(원본 URL/토큰, 응답 비공개)과 처리된 원본 클립 {id}-assets/original.mp4만 보관합니다. WONY_DATA_DIR로 변경할 때는 **절대 경로와 쓰기 권한**을 확인하세요.
 
 단일 업로드 원본/정규화 임시 파일은 삭제하지만 오버레이와 JPEG에는 영상 내용이 남습니다. VOD/파일 리플레이 원본은 보정용으로 남습니다. URL LIVE 전체는 녹화하지 않으며 과거 보정은 별도 녹화 VOD 업로드가 필요합니다. 작업/세션 DELETE는 파생 분석 JSON/자산까지 삭제하지 않습니다.
 
-LIVE1개/VOD1개, 정밀 엔진 lock 공유. 외부 큐/인증/사용자 격리/DB 인덱스/자동 재개/보관기한은 미구현입니다. URL 기본 public DNS 검사는 있지만 HLS 참조/redirect/DNS 변화의 완전한 egress 격리는 미구현이므로 공개 배포 준비가 끝난 상태가 아닙니다.
+LIVE1개/VOD1개, 정밀 엔진 lock 공유. 외부 큐/인증/사용자 격리/DB 인덱스/자동 재개/보관기한은 미구현입니다. VOD/LIVE URL은 HLS 참조/redirect별 public IP 검증과 연결 IP 고정/TLS SNI를 적용합니다. 인증/사용자 격리와 배포 egress 제한은 별도이므로 공개 서비스 준비 완료를 의미하지 않습니다.
 
-## 12. 테스트 — 현재 105개
+## 12. 테스트 — 현재 172개
 
-최신 Linux/Python3.12 실행 기록: **pytest105개 통과, 의존성 deprecation 경고3개**. 이번 문서 작업에서는 수집만 다시 확인하여105개임을 검증했습니다. 테스트 수집 성공은 Windows 실행 성공을 의미하지 않습니다. Windows 실행은 아직 미검증입니다.
+최신 Linux/Python3.12 검증: **pytest172개 통과, 의존성 deprecation 경고3개**. 기존129개에 5툴/촬영 조건/근거/성장 비교43개를 추가했습니다. 생성 HTTP MP4/HLS에서 실제 ffmpeg와 API→리포트→자산→구간 수정까지 검증하며, 역할/모델 출력 fixture는 합성입니다. 실제 SOOP/VR 정확도와 Windows 실행은 아직 미검증입니다.
 
 프로젝트 루트, PowerShell:
 
@@ -283,9 +292,10 @@ $env:WONY_BASE_URL = "http://127.0.0.1:8000"
 npm run test:browser
 npm run test:broadcast
 npm run test:modes
+node tests/tools.mjs
 ```
 
-경로가 다르면 실제 Chrome/Chromium/Edge 실행 파일로 바꾸세요. 기본 테스트 경로 `/usr/bin/chromium`은 Windows에 없습니다. Node/browser가 필요 없는 서버 실행과 구분하세요. test:scouting은 같은 통합 UI 회귀의 alias이므로 test:browser와 별도 중복 검증이 아닙니다. 이전 Linux Chromium에서 이3종이 통과했습니다. 브라우저 테스트가 PNG/분석 데이터를 생성하므로 git status를 확인하세요.
+경로가 다르면 실제 Chrome/Chromium/Edge 실행 파일로 바꾸세요. 기본 테스트 경로 `/usr/bin/chromium`은 Windows에 없습니다. Node/browser가 필요 없는 서버 실행과 구분하세요. test:scouting은 같은 통합 UI 회귀의 alias이므로 test:browser와 별도 중복 검증이 아닙니다. Linux Chromium의 통합 리포트/방송/모드 및 새 tools UI 검증이 통과했습니다. 브라우저 테스트가 PNG/분석 데이터를 생성하므로 git status를 확인하세요.
 
 검증 범위: 다섯 역할/부족 pose/schema/confidence/실패 정리/재조회, 시각화 자산, scouting/growth 조건 비교, 구간 예산/보정, LIVE 상태/분석 차단, 읽기 전용 리포트 그룹/메뉴/통합 역할 탭/재생·시점·키프레임/원본 부재/모바일. 생성 빈 영상은 실제 ffmpeg/MediaPipe 경로, 합성 pose는 schema/계산 테스트입니다.
 
@@ -293,7 +303,7 @@ npm run test:modes
 
 - 실제 사람 야구와 VR 아바타의 pose/각도/이벤트/코칭 정확도. 합성 DEMO/검은 영상 테스트로 이를 주장하지 않기.
 - 360/equirectangular 투영, 다중 인물 선택, 한 영상의 개별 플레이 자동 분할.
-- 자동 역할/내야·외야 분류, 배트·공·글러브 접촉, 베이스/필드 보정, 실제 경기 성공·실패.
+- 자동 역할 휴리스틱의 실제 정확도·내야/외야 자동 분류, 배트·공·글러브 접촉, 베이스/필드 보정, 실제 경기 성공·실패.
 - 실제 구속/타구속도/힘 전달/발 압력/체중 분포, 정확한 3D 깊이/축 회전, 검증된 점수 체계.
 - 선택 ONNX 실제 방송/VR 오탐·누락, VR UI/스코어보드/반복 자세 classifier.
 - 외부 HTTP/HLS 라이브 에지·재접속·지연·타임코드, 1~10시간 성능/메모리/디스크, Windows 실제 호환성.
@@ -325,3 +335,9 @@ npm run test:modes
 - **긴 작업:** timeout, disk/full, 파일 codec, HLS/URL 만료·방화벽을 확인. 공개 HTTP stream URL만 받고 내부 주소/플랫폼 페이지를 우회 허용하지 않기. 첫 확인은 짧은 로컬 파일과 DEMO부터 시작.
 
 첫 보고에는 Python/ffmpeg 버전, 설치·서버·health·3메뉴·통합 리포트 확인, pytest 실행 개수/결과, 실제 영상 사용 여부, Windows 특이 오류와 재현을 구분해 적으세요.
+
+## 16. 이번 5툴 변경 요약
+
+통합 리포트 첫 화면은 PLAYER TOOLS → 강점 → 개선점 → 역할별 요약 → 성장 비교 → 플레이 근거 순서입니다. 각 카드의 confidence/estimated/raw proxy/method는 상세에 두며 근거 클릭은 기존 원본/2D/3D/keyframe 영역을 엽니다. 근거 scope=whole_clip과 candidate=true를 유지해 플레이 성공 판정으로 바꾸지 않습니다. API 조회는 과거 저장 결과를 고치지 않고 entries.scouting_extension으로 확장합니다.
+
+새 테스트43개는 실제 계산식, 부족 데이터, cadence 주기, 점수/구속 null, 역할 요약, 중복/서로 다른 선수/DEMO 집계 차단, 근거 연결, 촬영 조건·관측 범위 호환성, LIVE/VOD metadata 전달을 검증합니다. 비교 fixture에 촬영 조건을 추가했으며 기존 assertion은 유지했습니다. 실제 WONY/VR 영상 정확도·노이즈·원근 영향은 별도 검증 필요합니다.

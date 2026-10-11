@@ -51,11 +51,11 @@ def start(config,url=None,path=None,metadata=None):
         'role':config['role'],'role_source':'manual_hint' if config['role']!='unknown' else 'unknown',
         'baseball_segments':[],'current_segment':None,'transitions':[],'analyses':[], 'config':config,'metadata':metadata or {},
         'progress':{'sampled_frames':0,'analysis_clips':0},'synthetic_demo':False,
-        'warnings':['Confidence is heuristic. Color-only candidates never activate detailed analysis.',
-            'Role is unknown or an operator hint, not automatic role classification.',
+        'warnings':['Confidence is heuristic. Color/posture alone never activates detailed analysis; independent equipment/scene evidence is required.',
+            'Automatic roles use conservative temporal pose heuristics; ambiguous clips require an operator hint.',
             'Stream sampling/capture reconnect independently and source timestamps are approximate session elapsed seconds.',
-            'No platform-specific adapter. Redirects/manifests require network egress controls before public deployment.',
-            'Analysis coverage is bounded. Unknown role, weak evidence and silent ending grace do not run pose/scouting.']}
+            'No platform-specific adapter. Remote redirects/manifest references use validated public-IP connections; deployment egress controls remain recommended.',
+            'Analysis coverage is bounded. Weak evidence and silent ending grace do not run pose/scouting. Unknown roles get bounded pose classification only after baseball confirmation.']}
     persist(session);snapshot=deepcopy(session)
     threading.Thread(target=run,args=(session,source,duration,metadata or {},stop),daemon=True).start()
     return snapshot
@@ -98,10 +98,11 @@ def run(session,source,duration,metadata,stop):
             session['elapsed_seconds']=t;session['progress']['sampled_frames']+=1
             action=machine.tick(t,signals)
             with LOCK:role=RUNTIME[session['id']]['role']
-            session['role']=role;session['role_source']='manual_hint' if role!='unknown' else 'unknown'
+            if role!='unknown':session['role']=role;session['role_source']='manual_hint'
+            elif session.get('role_source')!='automatic':session['role']='unknown';session['role_source']='unknown'
             attach(session,machine);persist(session)
             if action=='close':close_segment(session,machine,t)
-            elif action=='analyze' and role!='unknown' and session['progress']['analysis_clips']<config['max_analysis_clips']:
+            elif action=='analyze' and session['progress'].get('attempted_clips',0)<config['max_analysis_clips']:
                 clip=root()/session['id']/'active-clip.mp4'
                 try:
                     length=min(config['clip_seconds'],duration-t) if duration is not None else config['clip_seconds']
@@ -111,16 +112,29 @@ def run(session,source,duration,metadata,stop):
                     check_times=list(range(0,max(1,int(actual_duration)),5))+[max(0,actual_duration-.1)]
                     supported=all(evidence(detector(captured.sample(moment)),config['threshold'])[1] for moment in check_times)
                     if supported and not stop.is_set():
+                        session['progress']['attempted_clips']=session['progress'].get('attempted_clips',0)+1
                         result=analyze_clip(clip,role,metadata,lambda stage:record_stage(session,stage))
+                        inferred=result.get('role',role)
+                        if inferred=='unknown':
+                            session['role_selection_required']=True
+                            session['role']='unknown';session['role_source']='unknown'
+                            session['role_estimate']=result.get('role_estimate')
+                            persist(session)
+                            stop.wait(config['sample_interval'])
+                            continue
+                        session['role_selection_required']=False
+                        session['role']=inferred
+                        session['role_source']='automatic' if role=='unknown' else 'manual_hint'
+                        session['role_estimate']=result.get('role_estimate')
                         reference={'analysis_id':result['id'],'analysis_url':f"/api/analysis/{result['id']}",
-                            'start':offset,'end':offset+actual_duration,'role':role,'role_source':'manual_hint',
+                            'start':offset,'end':offset+actual_duration,'role':inferred,'role_source':session['role_source'],
                             'status':result['status'],'timestamp_origin':'clip_relative','broadcast_offset_seconds':offset}
                         machine.current['analyses'].append(reference);session['analyses'].append(reference)
-                        if role not in machine.current['roles']:machine.current['roles'].append(role)
+                        if inferred not in machine.current['roles']:machine.current['roles'].append(inferred)
                         session['progress']['analysis_clips']+=1;machine.current['review_required']=False
                         machine.last_hit=offset+actual_duration;machine.current['last_signal']=machine.last_hit
                 finally:clip.unlink(missing_ok=True)
-            if machine.current and session['progress']['analysis_clips']>=config['max_analysis_clips']:
+            if machine.current and session['progress'].get('attempted_clips',0)>=config['max_analysis_clips']:
                 machine.current['coverage']='partial_budgeted';machine.current['review_required']=True
             if failures>=6:raise RuntimeError('Repeated source acquisition failures')
             attach(session,machine);persist(session)
@@ -132,6 +146,7 @@ def run(session,source,duration,metadata,stop):
         close_segment(session,machine,time.monotonic()-started)
         session.update(status='failed',error='Stream acquisition or analysis failed; completed results remain available');persist(session)
     finally:
+        if 'detector' in locals() and hasattr(detector,'close'):detector.close()
         with LOCK:RUNTIME.pop(session['id'],None)
 
 

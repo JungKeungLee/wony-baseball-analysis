@@ -44,7 +44,7 @@ def player_records(player_id, source='real'):
                 skipped += 1
                 continue
             records.append({key: result.get(key) for key in ['id', 'role', 'analysis_date', 'created_at',
-                'synthetic_demo', 'comparison_context', 'observation_method_version',
+                'synthetic_demo', 'comparison_context', 'capture_context', 'player_id', 'observation_method_version',
                 'throwing_hand', 'position_type', 'status', 'metrics']} | {
                 'ratings': report.get('ratings', {}), 'scouting_report': report})
         except (OSError, ValueError, TypeError):

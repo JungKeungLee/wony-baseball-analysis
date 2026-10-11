@@ -105,7 +105,7 @@ def test_live_api_lifecycle_role_stop_unknown_config(client,monkeypatch):
     assert client.delete('/api/live/'+sid).status_code==200
 
 
-@pytest.mark.parametrize('role,signal,clip_supported,expected',[('batter',STRONG,True,2),('unknown',STRONG,True,0),('batter',{'field_color_candidate':.6},True,0),('batter',STRONG,False,0)])
+@pytest.mark.parametrize('role,signal,clip_supported,expected',[('batter',STRONG,True,2),('unknown',STRONG,True,2),('batter',{'field_color_candidate':.6},True,0),('batter',STRONG,False,0)])
 def test_live_worker_common_engine_gated_and_multiple_clips(client,monkeypatch,role,signal,clip_supported,expected):
     # Accelerate only the acquisition clock; worker still executes real gating/state/report logic.
     config=LiveConfig(role=role,sample_interval=5,confirmation_seconds=10,minimum_hits=2,max_analysis_clips=2,max_session_seconds=60).model_dump()
@@ -127,13 +127,13 @@ def test_live_worker_common_engine_gated_and_multiple_clips(client,monkeypatch,r
     monkeypatch.setattr(sessions,'probe',lambda _:10)
     calls=[]
     def analyze(path,role,meta,callback):
-        calls.append(role);callback('SCOUTING_REPORT');return {'id':str(uuid4()),'status':'completed'}
+        calls.append(role);callback('SCOUTING_REPORT');return {'id':str(uuid4()),'status':'completed','role':'batter' if role=='unknown' else role}
     monkeypatch.setattr(sessions,'analyze_clip',analyze)
     sessions.RUNTIME[sid]={'role':role,'stop':Stop()}
     sessions.run(session,Source(),None,{},Stop())
     assert session['status']=='stopped' and calls==[role]*expected
     if expected:
-        assert session['baseball_segments'][0]['roles']==[role]
+        assert session['baseball_segments'][0]['roles']==['batter' if role=='unknown' else role]
         assert len(session['baseball_segments'][0]['report']['analysis_ids'])==2
         assert session['baseball_segments'][0]['coverage']=='partial_budgeted'
     else:

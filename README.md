@@ -6,6 +6,10 @@ WONY PHONE과 분리된 Python/FastAPI 야구 영상 분석 MVP입니다. 타자
 
 메인 메뉴는 **대시보드 · 방송 분석 · 분석 기록**입니다. `/demo/broadcast/`에서 LIVE/VOD를 선택하고, 모든 결과는 `/demo/analysis/{id}`의 통합 리포트에서 봅니다. 역할별 정보·scouting·성장·플레이별 원본/2D/3D/keyframe을 한 페이지에서 탐색합니다. `/demo/analyses/`에 실제/DEMO 기록을 분리해서 제공합니다. [통합 UI 계약](docs/UNIFIED_UI.md)을 참고하세요. 아래 v0.3/v0.4 탭 설명은 이전 버전 기록입니다.
 
+## 5툴 스카우팅
+
+통합 리포트 첫 화면에 CONTACT / POWER / SPEED / FIELDING / ARM을 제공합니다. 손 경로·속도/가속도·2D 선 분리각·골반/발목 경로·주루 주기 등 실제 좌표 계산을 연결하며 모든 능력 점수/등급은 null입니다. 실제 컨택·구속·타구 속도·물리적 주루 속도는 미지원입니다. [구현 전 GAP](docs/SCOUTING_GAP.md), [계산식/API/성장 호환성/검증](docs/SCOUTING_TOOLS.md)을 참고하세요. 같은 선수의 비교에는 capture_context(camera angle/VR/quality 등)를 지정해야 하며, 조건·관측 범위가 다르면 delta=null입니다.
+
 ## 설치와 실행
 
 Python 3.12와 PATH에 등록된 ffmpeg가 필요합니다. Linux에서는 시스템 패키지 관리자로 ffmpeg를 설치하세요. MediaPipe 0.10.21의 번들 Pose 모델을 사용하며 별도 키나 모델 다운로드는 필요하지 않습니다.
@@ -35,7 +39,7 @@ curl -X POST http://localhost:8000/api/analyze \
 curl http://localhost:8000/api/analysis/REPLACE_WITH_RESULT_ID
 ```
 
-`role`은 `batter`, `defense`, `catcher`, `pitcher`, `baserunning`, `auto`이며 기본은 기존 요청 호환을 위해 `pitcher`입니다. `auto`는 분류기 미구현으로 `unknown`을 반환합니다. 수비는 `position_type=infielder|outfielder`를 수동 지정할 수 있고 기본 `auto`는 `unknown`입니다.
+`role`은 `batter`, `defense`, `catcher`, `pitcher`, `baserunning`, `auto`이며 기본은 기존 요청 호환을 위해 `pitcher`입니다. `auto`는 짧은 시퀀스의 pose/움직임/객체 맥락으로 역할을 추정하며 근거 부족 시 `unknown`을 반환합니다. 수비는 `position_type=infielder|outfielder`를 수동 지정할 수 있고 기본 `auto`는 `unknown`입니다.
 
 `throwing_hand`는 `left` 또는 `right`이며 기본값은 `right`입니다. POST는 동기 분석 완료 후 JSON을 반환합니다. 같은 프로세스에서 동시 분석 요청은 503을 반환합니다. MVP는 **uvicorn 단일 worker**로 실행하세요. GET은 저장된 JSON을 다시 반환하며 없는 ID는 404, 잘못된 UUID는 422입니다.
 
@@ -78,7 +82,7 @@ curl http://localhost:8000/api/analysis/REPLACE_WITH_RESULT_ID
 
 구조 및 다음 작업은 [docs/HANDOFF.md](docs/HANDOFF.md)를 참고하세요.
 
-기존 결과 JSON은 GET으로 계속 조회할 수 있습니다. 신규 응답의 schema_version은 `0.4.0`입니다. 테스트는 저장소 루트에서도 `.venv/bin/python -m pytest -q`로 실행 가능합니다. 내부 오류는 500과 `analysis_failed`, 잘못된 role은 422를 반환합니다. 자동 역할/포지션 추정, 배트·공·미트 검출, 실제 반응시간/포구성공은 미지원으로 null 또는 unknown입니다.
+기존 결과 JSON은 GET으로 계속 조회할 수 있습니다. 신규 응답의 schema_version은 `0.4.0`입니다. 테스트는 저장소 루트에서도 `.venv/bin/python -m pytest -q`로 실행 가능합니다. 내부 오류는 500과 `analysis_failed`, 잘못된 role은 422를 반환합니다. 자동 역할은 보수적 휴리스틱이며 정확도 미검증입니다. 자동 포지션 추정·실제 반응시간·포구성공은 null/unknown을 유지합니다. 배트/글러브/공 후보는 선택 ONNX 모델로만 탐지하며 접촉을 확정하지 않습니다.
 
 ## 2D / 3D 시각화 (v0.3)
 
@@ -109,18 +113,18 @@ curl http://localhost:8000/api/players/PLAYER-001/scouting-report
 
 선수 기록은 기본 `source=real`이며 합성 기록은 `?source=demo`로 따로 조회합니다. 같은 역할·촬영 조건·방법·단위와 충분한 신뢰도가 있을 때만 자세 대리 지표의 이전 대비 차이를 계산합니다. 차이는 기량 향상의 증거가 아닙니다. `GET /api/demo/growth`의 62→71→77 예시는 **DEMO 임의 데이터**로 실제 기록에 저장하지 않습니다.
 
-검증: 백엔드 pytest **72개 통과**, 기존 시각화 및 새 리포트 Chromium 브라우저 테스트 통과. 실제 야구/VR 영상 정확도와 자동 플레이 분리는 아직 검증하지 않았습니다. [Windows 실행 안내](docs/WINDOWS.md), [리포트 화면 캡처](docs/screenshots/scouting-report.png)를 참고하세요.
+현재 검증: 백엔드 pytest **172개 통과**, 기존 시각화 및 새 리포트 Chromium 브라우저 테스트 통과. 실제 야구/VR 영상 정확도와 자동 플레이 분리는 아직 검증하지 않았습니다. [Windows 실행 안내](docs/WINDOWS.md), [리포트 화면 캡처](docs/screenshots/scouting-report.png)를 참고하세요.
 
 
 ## 긴 방송 분석
 
 기존 엔진 앞에 sparse segment detection layer를 추가했습니다. `POST /api/analyze`의 `mode=auto_segments` 또는 수동 `segments`를 사용하면 HTTP 202 작업 ID를 반환하고 `/api/broadcasts/{id}`에서 진행/구간을 조회합니다. `/demo/` 하단에 타임라인·구간 미리보기·수정·재분석이 있습니다. 기본 10초 간격 스캔, 근접 병합/버퍼, 최대 스캔 프레임·정밀 클립 예산을 지원합니다.
 
-**현재 기본 탐지는 색상 기반 검토 후보이며 완성된 야구 분류기가 아닙니다.** 선택적 로컬 YOLOv8 COCO ONNX로 배트/글러브 다중 근거를 추가할 수 있습니다. 역할 unknown/낮은 confidence는 정밀 분석을 건너뛰며 사람의 구간·역할 지정 후 분석합니다. VR UI/자동 역할 분류와 실제 장시간 정확도 검증은 미지원입니다. 전체 방송 원본은 보정용으로 보관합니다. [API·비용·모델·보관 정책](docs/BROADCAST_SEGMENTS.md)을 참고하세요.
+**현재 탐지는 검증된 야구 분류기가 아닙니다.** 색상 맥락·선택 객체/장면 모델·희소 pose 움직임을 조합합니다. 모델 없이 색상/자세만으로는 확정하지 않습니다. 확인된 야구 클립은 자동 역할 추정을 거쳐 기존 엔진으로 분석하고, 역할 근거가 부족할 때만 선택을 요청합니다. 실제 SOOP/VR 정확도와 장시간 부하는 미검증입니다. [최신 입력·모델·검증 계약](docs/ENGINE_INPUTS.md)을 참고하세요.
 
 
 ## LIVE / VOD
 
 `/demo/live/`는 HTTP(S) 스트림 또는 파일 리플레이를 저비용 감시하고 반복 다중 신호 확인/종료 유예를 적용합니다. `/demo/broadcast/`는 정확 구간, 대략 구간+버퍼, 중심 시점±탐색 폭, 전체 자동 탐색을 지원합니다. 둘 다 같은 detector와 `segments/execution.py`를 통해 기존 다섯 역할/2D/3D/events/scouting 엔진을 재사용합니다.
 
-API: `POST /api/live`, `GET /api/live/{id}`, `POST /api/live/{id}/stop`, `PATCH /api/live/{id}/role`; `POST /api/vod`와 기존 broadcast 조회/수정 API. **기본 색상 단서만으로는 LIVE 분석이 활성화되지 않으며 자동 역할은 unknown**입니다. 선택 객체 모델과 사람 역할 힌트가 필요합니다. [설정·요청 예시·파일 목록·검증 한계](docs/LIVE_VOD.md)를 참고하세요.
+API: `POST /api/live`, `GET /api/live/{id}`, `POST /api/live/{id}/stop`, `PATCH /api/live/{id}/role`; `POST /api/vod`와 기존 broadcast 조회/수정 API. VOD는 기존 업로드 또는 직접 MP4/종료 HLS URL을 지원합니다. **단일 색상/자세 신호로는 LIVE 분석이 활성화되지 않습니다.** 반복 다중근거 확인 후 역할을 자동 추정하고 실패할 때만 사람의 선택을 요청합니다. [설정·요청 예시·파일 목록·검증 한계](docs/LIVE_VOD.md)를 참고하세요.
