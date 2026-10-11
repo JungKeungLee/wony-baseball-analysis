@@ -1,264 +1,327 @@
-# 독립 야구 분석 엔진 인수인계 — v0.4
+# wony-baseball-analysis — 최신 인수인계
 
-서비스 적용 우선순위는 **batter → defense → catcher → pitcher**입니다. WONY PHONE 통합은 수행하지 않았습니다. 아래 UI 내용은 향후 연동을 위한 제안입니다.
+이 문서는 현재 로컬 소스 기준입니다. 이전 버전별 설명을 합쳐 **통합 리포트 UI / LIVE·VOD / 105개 테스트** 기준으로 정리했습니다. FastAPI 버전 표기는 0.4.0, 신규 단일 분석 응답 schema_version은 0.4.0입니다.
 
-## 구조와 실행
+WONY PHONE과 분리된 독립 Python 야구 영상 분석 MVP입니다. 현재 작업 목표는 **Claude Code에서 Windows 로컬 실행과 확인**입니다. WONY PHONE 통합, 새 기능 추가, commit/push는 승인되지 않았습니다.
 
-- `analysis/engine.py`: 수동 역할 라우팅 및 auto unknown 응답.
-- `analysis/shared/angles.py`: 공통 관절 각도와 상체 기울기 계산.
-- `analysis/shared/pose_metrics.py`: landmark 검증, 유효 프레임 선택, 공통 좌표/길이/동작 계산. 투수도 같은 경로 사용.
-- `analysis/shared/confidence.py`: 추정값 형식, 신뢰도 등급, 제한적인 장점/단점/코칭.
-- `analysis/shared/event_utils.py`: 역할별 공통 이벤트 포맷.
-- `analysis/shared/fielding.py`: 수비·포수의 자세/이동 공통 계산.
-- `analysis/{batter,defense,catcher,pitcher}/analyzer.py`: 역할별 분석.
-- `analysis/defense/{infielder,outfielder}.py`: 세부 분석 확장 경계와 현재 미지원 항목.
-- `models/result.py`: POST 응답과 저장 결과의 Pydantic 계약. GET은 이전 v0.1 JSON도 조회 가능하도록 그대로 반환.
+**소스 전달:** LIVE/VOD·통합 UI·전달 문서를 함께 버전 관리합니다. 원격 저장소를 사용할 때는 최신 main을 받고 `git log -1`과 `docs/CLAUDE_HANDOFF.md` 존재를 확인하세요. ZIP은 생성 시점이 다를 수 있으므로 최신이라고 가정하지 마세요. 로컬 변경은 보존하고 `.venv`, `node_modules`, `data`, 캐시는 전달 소스에서 제외하세요.
 
-Python 3.12, ffmpeg, 가상환경 설치와 실행은 README를 참고합니다. uvicorn은 단일 worker로 사용합니다. 입력 한 개에서 한 사람·한 동작을 분석하며 여러 투구/스윙 자동 분할은 아직 없습니다. 최대 100 MiB, 60초, 10 fps, 최대 320px입니다. 원본 업로드는 삭제하고 결과 JSON은 `backend/data/` 또는 `WONY_DATA_DIR`에 남습니다.
+## 1. 시작 순서와 참고 문서
 
-## 역할 지정과 API
+1. [CLAUDE_HANDOFF.md](CLAUDE_HANDOFF.md): 짧은 시작 안내.
+2. 이 문서: 실행, 구조, 계약, 보호할 부분.
+3. [UNIFIED_UI.md](UNIFIED_UI.md): 현재 메뉴와 리포트 구성.
+4. [LIVE_VOD.md](LIVE_VOD.md): 입력 모드/상태/시간/제한.
+5. [BROADCAST_SEGMENTS.md](BROADCAST_SEGMENTS.md): 구간 탐지 근거/보관 정책.
+6. [WINDOWS.md](WINDOWS.md): 설치 보조 안내. 최신 소스 범위와 URL은 **이 문서를 우선**하세요.
 
-`POST /api/analyze` multipart 필드:
+README의 과거 v0.3/v0.4 탭 설명과 일부 PNG는 이전 UI 기록입니다. 별도 Motion Lab/Scouting Report 메뉴를 다시 만들지 마세요.
 
-| 필드 | 값 | 기본값/의미 |
-|---|---|---|
-| video | 영상 파일 | 필수 |
-| role | batter / defense / catcher / pitcher / baserunning / auto | pitcher; 기존 요청 호환 |
-| throwing_hand | right / left | right; 투구/송구 팔, 반대 손목을 글러브 대리값으로 사용 |
-| position_type | auto / infielder / outfielder | auto; defense용 수동 포지션 힌트 |
+## 2. 전체 구조와 주요 폴더 역할
+
+```text
+wony-baseball-analysis/
+  backend/
+    app/
+      main.py                     # FastAPI, API router, /demo static/UI route
+      api/
+        routes.py                 # 단일 분석, DEMO, 결과/자산, 선수 기록
+        broadcasts.py             # 긴 영상 작업, 보정/삭제/원본 조회
+        modes.py                  # LIVE 및 VOD exact/approximate/auto
+        reports.py                # 읽기 전용 통합 리포트/목록/보관 원본
+      source/
+        base.py                   # provider 중립 sample/capture 인터페이스
+        file.py                   # seek 가능한 파일 입력
+        stream.py                 # HTTP(S) 스트림 입력
+      segments/
+        detection.py              # 저비용 신호 탐지, 병합, 시간/구간 검증
+        vod.py                    # VOD 탐색 범위 계산
+        jobs.py                   # 비동기 스캔/구간 추출 작업과 진행 저장
+        execution.py              # LIVE/VOD가 공유하는 정밀 분석 연결부
+      live/
+        state.py                  # 반복 감지/종료 유예 상태기계
+        sessions.py               # 감시 작업, 클립 검증/분석, 세션 저장
+      video/frames.py             # ffmpeg 정규화 → OpenCV 프레임 추출
+      pose/extractor.py           # MediaPipe Pose 관절 좌표
+      analysis/
+        engine.py                 # 공통 role 라우팅
+        shared/                   # 각도/pose 지표/confidence/event/fielding
+        batter/analyzer.py
+        defense/{analyzer,infielder,outfielder}.py
+        catcher/analyzer.py
+        pitcher/analyzer.py
+        baserunning/analyzer.py
+      scouting/{report,growth}.py  # 근거 기반 리포트와 조건부 이력 비교
+      visualization/              # 2D overlay, 3D 상대 좌표, keyframe, DEMO
+      models/{result,storage}.py   # Pydantic 응답 계약, 원자적 JSON 저장
+    requirements.txt              # 고정 Python 의존성
+    tests/                        # 7개 test 파일, 현재 105개 테스트
+  frontend-demo/
+    index.html / dashboard.js     # 메인 대시보드, 짧은 영상 분석 시작
+    broadcast/index.html          # 한 화면의 LIVE/VOD 탭
+    broadcast.js / live.js / broadcast-tabs.js
+    analyses/index.html / records.js
+    analysis.html / report.js     # 종합·역할·플레이 시각화를 한 페이지에
+    live/index.html               # 이전 URL 호환용 이동 안내
+    styles.css
+    vendor/                       # Three.js 0.174.0, OrbitControls, MIT LICENSE
+    tests/                        # Playwright UI/방송/모드 검증
+    package.json / package-lock.json
+  data/                           # 기본 생성 결과/원본/작업, Git 제외
+  docs/                           # 전달 문서, 과거 schema 예시, 캡처
+  README.md / pytest.ini / .gitignore
+```
+
+프론트는 일반 HTML/ES module과 로컬 Three.js입니다. React/Vite 빌드나 CDN이 필요하지 않습니다. Node.js는 브라우저 테스트에만 필요합니다. `frontend-demo/app.js`는 통합 UI 정리 과정에서 삭제되었고 현재 구현은 `report.js`입니다.
+
+## 3. 요구사항
+
+- **64-bit CPython 3.12** 및 로컬에서 생성한 `.venv`. 다른 머신/Linux의 venv를 복사하지 마세요.
+- PATH의 **ffmpeg + ffprobe**, 오버레이 인코딩에 **libx264** 필요.
+- `backend/requirements.txt` 전체 설치: FastAPI 0.115.12, uvicorn 0.34.2, python-multipart 0.0.20, opencv-contrib-python 4.11.0.86, MediaPipe 0.10.21, numpy 1.26.4, pytest 8.3.5, httpx 0.28.1, tzdata 2025.2.
+- MediaPipe의 `mp.solutions.pose.Pose`와 번들 모델 사용. 별도 API 키/기본 모델 다운로드는 필요하지 않습니다.
+- pandas, GPU, 외부 3D 모델, 방송 플랫폼 인증은 필수 의존성이 아닙니다.
+- uvicorn **단일 worker**. 현재 lock/작업 상태는 프로세스 안에서 관리합니다.
+
+## 4. Windows 로컬 실행 — PowerShell
+
+Python/FFmpeg가 없을 때만 설치하세요:
+
+```powershell
+winget install --id Python.Python.3.12 --exact
+winget install --id Gyan.FFmpeg --exact
+```
+
+설치 뒤 새 터미널을 열어 PATH를 반영합니다. winget 미지원이면 공식 Python Windows 설치 프로그램과 FFmpeg 다운로드 안내를 사용하세요.
+
+현재 소스를 받은 프로젝트 루트에서 실행합니다. 아래 경로는 예시이며 실제 위치로 바꾸세요.
+
+```powershell
+cd "C:\dev\wony-baseball-analysis"
+py -3.12 --version
+ffmpeg -version
+ffprobe -version
+ffmpeg -hide_banner -encoders | Select-String libx264
+
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r .\backend\requirements.txt
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+실행 창을 유지하고 다른 터미널/브라우저에서 확인하세요:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+```
+
+가상환경 활성화가 필요 없으므로 PowerShell 실행 정책을 바꿀 필요가 없습니다. `--reload`는 초기 확인에 사용하지 마세요. reload/프로세스 재시작은 실행 중 LIVE/VOD 작업을 중단할 수 있습니다.
+
+### Linux / Codex 실행 참고
 
 ```bash
-curl -X POST http://localhost:8000/api/analyze -F video=@bat.mp4 -F role=batter
-curl -X POST http://localhost:8000/api/analyze -F video=@field.mp4 -F role=defense -F position_type=infielder
-curl -X POST http://localhost:8000/api/analyze -F video=@outfield.mp4 -F role=defense -F position_type=outfielder
-curl -X POST http://localhost:8000/api/analyze -F video=@catch.mp4 -F role=catcher -F throwing_hand=right
-curl -X POST http://localhost:8000/api/analyze -F video=@pitch.mp4 -F role=pitcher
-curl -X POST http://localhost:8000/api/analyze -F video=@unknown.mp4 -F role=auto
-curl http://localhost:8000/api/analysis/RESULT_UUID
+cd /workspace/wony-baseball-analysis
+python3 -m venv .venv
+.venv/bin/python -m pip install -r backend/requirements.txt
+mkdir -p /tmp/wony-mpl /tmp/wony-cache
+MPLCONFIGDIR=/tmp/wony-mpl XDG_CACHE_HOME=/tmp/wony-cache \
+  .venv/bin/python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
-타격 좌/우 타석 방향을 throwing_hand에서 추론하지 않습니다. `position_type`은 사용자의 선언이며 자동 추정의 성공으로 표시하지 마세요. 자동 분류기는 아직 없으므로 auto는 `role=unknown`, 다섯 후보의 confidence=0을 반환합니다. 내야/외야도 수동 힌트가 없으면 unknown과 두 후보를 반환합니다.
+Cloud 내부 검증의 localhost는 PC에서 접근하는 서버가 아닙니다. 아래 주소는 **Windows PC에서 위 서버를 실행한 뒤** 열 수 있습니다.
 
-상태는 `completed`(자세 계산 완료), `insufficient_pose`(유효 pose 3개 미만), `unknown_role`(auto 분류 불가)입니다. auto에서 pose도 부족하면 insufficient_pose가 우선합니다. completed는 플레이 성공이나 객체 검출을 뜻하지 않습니다. 잘못된 role/position/hand와 손상 영상은 422, 크기 초과는 413, 동시 분석은 503, 내부 분석 실패는 500 + `detail.code=analysis_failed`입니다. 실패한 분석은 결과를 저장하지 않습니다. GET의 없는 ID는 404입니다.
+## 5. 현재 데모 URL과 통합 UI
 
-## 타자 분석
-
-| 항목 | 반환 키 | 현재 근거/상태 |
-|---|---|---|
-| 기본 스탠스 open/square/closed | stance_type | 타석/투구 방향 보정 없어 null |
-| 스탠스 폭 | stance_width | 초기 발목 간격/몸통 길이 |
-| 무릎 굽힘 | knee_flexion | 양 무릎 2D 굽힘 평균 |
-| 상체 기울기 | trunk_lean | 영상 수직 기준 2D 각도 |
-| 배트 시작 위치 | bat_start_position | 배트 검출 없어 null |
-| 레그킥 여부 | leg_kick | 발목의 영상 위쪽 이동 >0.2 몸통 길이; 저신뢰 대리값 |
-| 앞발 착지 | front_foot_landing_time | 앞발 식별/이벤트 분할 없어 null |
-| 체중 이동 | weight_transfer_score | 골반 이동/몸통 길이; 실제 체중 아님 |
-| 골반/어깨 회전 | hip_rotation / shoulder_rotation | 영상 내 관절선 각도 변화; 실제 3D 축 회전 아님 |
-| 머리 고정 | head_stability_score | 초기 대비 최대 머리 좌표 이동/몸통 길이 |
-| 손 선행 | hands_lead | 배트/이벤트 순서 검출 없어 null |
-| downswing/level/uppercut | swing_type | 가장 빠른 양손 중심 이동 구간의 수직 경사; 배트 궤적 아님 |
-| 임팩트 | impact_time | 공·배트 접촉 확인 없어 null |
-| 팔꿈치/손목 | elbow_angle / wrist_angle | 지정 팔의 2D 팔꿈치; 손목은 손 landmark 없어 null |
-| 팔로스루 | follow_through | 손 움직임 후보 이후 손 중심 이동 |
-| 타격 후 밸런스 | balance | 마지막 프레임 골반-발목 중점 차이 |
-| 헛스윙/컨택/파울·인플레이/당겨치기·밀어치기 | whiff / contact / foul_or_in_play / pull_or_opposite | 공·배트·필드 검출 없어 모두 null |
-
-summary는 stance_type, swing_type, head_stability, weight_transfer의 **metric 객체**입니다. 예시의 단순 문자열 대신 confidence를 같이 전달합니다. swing_type의 level은 예시의 level swing에 대응합니다. 머리 안정성은 0.15 몸통 길이 임계값으로 stable_in_image/moving_in_image를 표시하며 기술 수준을 판정하지 않습니다.
-
-## 수비 분석
-
-| 항목 | 키 | 현재 근거/상태 |
-|---|---|---|
-| 준비/무릎/중심 높이·위치 | ready_stance / knee_flexion / center_height / center_position | 초기 2D 자세 |
-| 첫 스텝 방향/시점 | first_step_direction / first_step_time | 골반 0.1 몸통 길이 이동 첫 시점; image_left/image_right/image_up/image_down |
-| 첫 스텝 반응 시간 | reaction_time | 자극(타격) 시점 없어 null; 클립 시작 대비 시간과 구분 |
-| 좌우/전후 이동 | lateral_movement / depth_movement | 영상 수평 이동; 전후는 보정 없어 null |
-| 타구 방향 반응/포구 중심 | ball_direction_response / fielding_center | 타구·포구 검출 없어 null |
-| 글러브 위치/이동 | glove_position / glove_movement | 비송구 손목 대리값; 글러브 검출 아님 |
-| 몸 앞 포구/포핸드·백핸드 | catch_in_front / forehand_backhand | 깊이·공·글러브 검출 없어 null |
-| 송구 전환/준비 | throwing_transition / throwing_preparation | 포구 이벤트/공 검출 없어 null |
-| 풋워크 | footwork | 양 발목 누적 2D 이동; 스텝 수/효율 판정 아님 |
-| 밸런스/종료 안정성 | balance / end_stability | 마지막 골반 중심 편차/마지막 3프레임 골반 변화 |
-
-`fielding`, `tracking`, `catching`, `throwing_transition`, `infield` 그룹을 제공합니다. 내야의 ground_ball, double_play_preparation, first_base_throw_preparation, base_cover와 외야의 ball_judgment, landing_point_movement, advance_or_retreat, relay_direction은 공·필드·베이스 보정이 없어 null입니다. 내야·외야 전용 모델을 구현했다는 뜻은 아닙니다.
-
-## 포수 분석
-
-| 항목 | 키 | 현재 근거/상태 |
-|---|---|---|
-| 준비/무릎/상체 높이/중심 | ready_stance / knee_flexion / trunk_height / center_height / center_position | 초기 2D 자세 |
-| 미트 시작/이동 | mitt_start_position / mitt_movement | 비송구 손목 대리값 |
-| 포구 자세/프레이밍 | receiving_posture / framing | 공·미트/포구 이벤트 없어 null |
-| 낮은 공 블로킹/좌우 이동 | low_blocking_posture / lateral_blocking | 무릎 굽힘 >60도 후보/골반 수평 이동; 공 블로킹 확인 아님 |
-| 일어남 | standing_up | 초기 대비 골반 위쪽 이동 대리값 |
-| 포구 후 송구 준비/전환 시간 | throwing_preparation / transition_time | 포구·송구 검출 없어 null |
-| 상체 회전/밸런스 | upper_body_rotation / balance | 영상 관절선 방향 변화/골반 편차 |
-| 포구·블로킹 성공/송구 시작/2루 준비 | receive_success / blocking_success / throw_start_time / second_base_preparation | 공·이벤트·타깃 확인 없어 null |
-
-`receiving`, `blocking`, `throwing_transition` 그룹과 자세/무릎/밸런스 summary를 제공합니다.
-
-## 투수 유지
-
-12개 기존 metrics 및 ball_speed=null을 유지합니다. 관절/각도 계산은 공통 모듈로 이동했습니다. 정지 자세에서는 release_time=null, 이벤트 없음으로 반환하도록 개선했습니다. 동작이 없을 때 각도는 첫 유효 프레임 기준입니다. 후보 이후 동작과 투구폼 유형은 여전히 저신뢰 휴리스틱입니다.
-
-## 응답 JSON과 이벤트
-
-신규 응답은 schema_version=0.4.0, id, role, requested_role, status, summary, metrics, events, strengths, weaknesses, coaching, pose, warnings 등을 포함합니다. 다음은 **구조 설명용 축약 JSON**이며 실제 영상 분석 결과가 아닙니다. 완전한 합성 pose 예시는 `docs/examples/`에 있습니다.
-
-```json
-{"role":"batter","summary":{"swing_type":{"value":"level","estimated":true,"confidence":0.2,"confidence_grade":"low"}},"metrics":{},"events":[],"strengths":[],"weaknesses":[],"coaching":[]}
-```
-```json
-{"role":"defense","position_type":"infielder","position_source":"manual","summary":{},"fielding":{},"tracking":{},"catching":{},"throwing_transition":{},"metrics":{},"events":[]}
-```
-```json
-{"role":"catcher","summary":{},"receiving":{},"blocking":{},"throwing_transition":{},"metrics":{},"events":[]}
-```
-```json
-{"role":"pitcher","summary":{},"metrics":{"release_time":{"value":null,"estimated":true,"confidence":0,"confidence_grade":"low","reason":"No significant wrist motion; release candidate unavailable"}},"events":[],"ball_speed":null}
-```
-
-공통 이벤트는 `{timestamp, role, type, estimated, confidence, confidence_grade, candidate, metrics}`입니다. timestamp는 정규화된 영상의 초 단위 시간입니다. batter의 swing은 가장 빠른 양손 중심 이동, catcher receive/defense fielding은 가장 빠른 비송구 손목 이동, pitcher release는 가장 빠른 투구 손목 이동에서 발생하는 **미확인 후보**입니다. 영상 초당 몸통 길이 0.5 이상의 움직임이 필요하며 정지 자세는 이벤트를 생성하지 않습니다. 실제 접촉/포구/릴리스를 확인한 것으로 표시하지 마세요. 역할별 한 후보만 반환하며 여러 동작 이벤트 분할은 미구현입니다.
-
-## confidence와 VR 한계
-
-모든 metric은 value, unit, estimated=true, confidence(0–1), confidence_grade, method, reason을 갖습니다. null 값은 confidence=0과 사유가 있습니다. 요약과 장점/단점/코칭 항목도 추정/신뢰도 정보를 유지합니다. grade는 high≥0.75, medium≥0.4, 그 미만 low입니다. 신뢰도는 가시성과 보수적 규칙 기반의 **비보정 점수**이며 확률/정확도가 아닙니다. MVP 지표는 대부분 medium 또는 low이며 high 정확도를 주장하지 않습니다.
-
-VR 아바타는 실제 관절과 애니메이션이 다를 수 있고 MediaPipe가 실패할 수도 있습니다. 360/equirectangular 투영은 미지원이며 평면 영상으로 변환해야 합니다. 고정 카메라·한 사람·전신 가시성을 전제로 하며 카메라 이동/원근/가림에 따라 값이 변합니다. 실제 힘 전달, 발 압력, 체중 분포, 실제 구속/타구 속도를 확정하지 않습니다. 공 속도와 타구 속도는 null입니다.
-
-## 향후 WONY PHONE 표시 권장
-
-이 단계에서는 WONY PHONE 코드 변경이나 API 연동을 하지 않았습니다.
-
-- 바로 연결하기 좋은 것: role/수동 position 표시, 분석 상태, confidence 배지, 관절·프레임 수, medium 이상의 영상 평면 자세 수치(스탠스 폭/무릎/상체 기울기/머리 이동/중심 편차). 화면에 '영상 기반 추정'과 단위를 함께 표시하세요.
-- 강조하면 안 되는 것: low 이벤트와 swing_type, 체중 이동/회전 대리값, 미트/글러브 대리값. 상세 펼침에서 계산 근거와 함께만 노출하세요.
-- 아직 표시하면 안 되는 것: null을 0이나 '실패'로 바꾼 결과, 컨택/헛스윙/파울/성공 판정, 실제 반응/송구 전환 시간, 자동 포지션, 실제 배트 궤적/구속/타구 속도, 실제 발 압력/힘. 미지원 안내 또는 항목 숨김을 사용하세요.
-
-UI 추천:
-
-1. 타자: 첫 탭. 머리 이동·스탠스 폭·무릎 굽힘 카드 → 추정 스윙 후보 타임라인 → 장점/단점/코칭(있을 때만).
-2. 수비: 내야/외야 수동 선택 → 영상 좌우 이동·풋워크·종료 중심 카드. '빠른 반응', '몸 앞 포구' 같은 미검증 칭찬은 하지 않기.
-3. 포수: receiving/blocking/throwing_transition 섹션. 실제 성공 판정 대신 자세·손목 대리값과 미지원 안내.
-4. 투수: 기존 각도/중심 카드 유지. 릴리스는 후보 표시, 구속은 숨김.
-
-장점/단점은 현재 머리 안정성과 밸런스의 보수적 임계값에만 기반합니다. confidence<0.4이면 생성하지 않으며 빈 배열도 정상입니다. 전문가 판정이나 개인 맞춤 훈련 처방은 아닙니다.
-
-## 검증과 다음 작업
-
-자동 테스트는 기존 투수 회귀, 네 역할 합성 pose 정상/부족/정지 상태, 지표 신뢰도, 이벤트 schema, 수동 포지션/auto unknown, 잘못된 role, 내부 실패 정리, POST/GET 동일 결과를 검증합니다. 실제 ffmpeg/OpenCV/MediaPipe 경로는 사람 없는 생성 영상으로 검증합니다. 합성 pose 테스트는 실제 야구/VR 영상 정확도를 입증하지 않습니다.
-
-다음 순서: 실제 영상과 라벨 확보 → 타석/필드 보정과 배트·공·글러브 검출 → 이벤트 분할/3D 모델·VR 투영 검토 → 비동기 큐/인증/보관 정책 → 별도 UI → 승인된 WONY PHONE 연동. 현재 인증/사용자 격리는 없어 공개 서비스 배포 전 추가 작업이 필요합니다.
-
-현재 환경 검증: **pytest 72개 통과**, 기존 투수 회귀 포함, 의존성 `pip check` 통과. MP4 인코딩/프레임 수/byte-range, JPEG, 추정 3D schema, 누락 pose, 경고색 제한, 인코딩/저장 실패 시 자산 정리를 검증했습니다. Chromium 브라우저 테스트도 통과했습니다: 4가지 합성 역할 데모, Three.js 렌더링, 재생/회전/슬라이더/키프레임 점프, 업로드/insufficient_pose, 모바일 폭 레이아웃과 JS 오류 확인. 의존성 deprecation 경고 3개가 있습니다. 실제 사람/VR 영상의 정확도는 아직 검증하지 않았습니다.
-
-## 시각화 추가 (v0.3)
-
-`app/visualization/`에 joints, overlay, pose3d, keyframes, builder, demo를 추가했습니다. 기존 role 분석 이후 같은 프레임과 관절 좌표를 사용해 시각화 자산을 생성합니다. 별도의 3D pose estimation 모델을 추가한 것은 아닙니다.
-
-- 2D: 샘플링된 원본 프레임 위에 머리(코 landmark 대리), 어깨/팔꿈치/손목/골반/무릎/발목과 연결선을 표시합니다. 가시성<0.5 관절은 숨깁니다. 키프레임/이벤트 프레임에는 어깨/팔꿈치 각도, 무릎 굽힘, 상체 기울기, 초기 대비 영상 평면 골반선 변화를 표시합니다.
-- 키프레임: 타자 stance/load/front_foot_landing/swing_start/estimated_impact/follow_through, 투수 setup/leg_lift/stride/arm_cocking/release/follow_through. 포수/수비는 ready/action/finish입니다. 상태는 candidate/reference_only/unavailable이며 phase_detected=false입니다. 확인되지 않은 단계가 검출된 것처럼 표시하지 마세요. 앞발 착지/임팩트는 confidence=0의 참고 프레임입니다. 같은 프레임이 여러 후보 단계에 대응할 수 있습니다.
-- 3D: MediaPipe 정규화 x/y와 상대 z에서 골반 중심을 빼고 영상 평면 몸통 길이로 나눕니다. x는 영상 오른쪽, y는 위쪽, z는 카메라 쪽입니다. 단위는 visual_torso_lengths이며 미터/실제 관절 회전/힘이 아닙니다. 실제 3D 복원이나 보정된 깊이 추정이 아닙니다. estimated=true, confidence≤0.35, confidence_grade=low; 각 관절 신뢰도는 joint_confidence에 있습니다.
-- 시간: frame은 10 fps 샘플링 후의 0 기반 인덱스입니다. 원본 영상 프레임 번호가 아닙니다. timestamp는 정규화 영상의 초 단위 시간이며 누락 프레임은 joints={}로 남습니다. 누락 프레임을 보간하거나 다른 포즈로 채우지 않습니다.
-- 경고: 현재 엔진의 지원된 head_stability_score/balance 문제 항목만 고려합니다. 문제와 metric 모두 confidence≥0.75이고 해당 키프레임에 근거가 있을 때만 2D 관절 경고색이 가능합니다. '상체가 빨리 열림/힘 전달 부족/체중 이동 부족' 같은 인과 판정은 하지 않습니다. 현재 엔진의 confidence가 이 기준보다 낮으므로 일반적으로 경고색이 없습니다. 3D는 모두 저신뢰로 경고색을 적용하지 않습니다.
-- 자산: backend/data/{id}-assets/overlay.mp4와 keyframe-NNNN.jpg에 저장하고 제한된 assets API로 제공합니다. H.264/libx264, yuv420p, faststart MP4입니다. ffmpeg에 libx264 인코더가 필요합니다. 인코딩/JSON 저장 실패 시 이번 분석의 자산과 임시 폴더를 정리합니다. 기존 결과는 유지합니다.
-
-응답 구조 예시(축약, 실제 측정값 아님):
-
-```json
-{
-  "schema_version": "0.3.0",
-  "visualization": {
-    "overlay_video_url": "/api/analysis/UUID/assets/overlay.mp4",
-    "keyframes": [{"stage":"estimated_impact","frame":12,"timestamp":1.2,"estimated":true,"confidence":0,"confidence_grade":"low","status":"reference_only","phase_detected":false}],
-    "pose3d": {
-      "estimated": true,
-      "confidence": 0.3,
-      "confidence_grade": "low",
-      "units": "visual_torso_lengths",
-      "frames": [{"frame":12,"timestamp":1.2,"estimated":true,"confidence":0.3,"confidence_grade":"low","joints":{"left_shoulder":[-0.3,1.0,0.1]},"joint_confidence":{"left_shoulder":0.3}}]
-    }
-  }
-}
-```
-
-프론트는 `/demo/`에서 FastAPI와 같은 origin으로 제공합니다. Three.js 0.174.0/OrbitControls는 로컬에 포함했습니다. 재생/일시정지, 프레임 슬라이더, 정면/측면/후면, 마우스 회전, 키프레임 이동을 지원합니다. 캐릭터형 모델과 WONY PHONE 통합은 미구현입니다.
-
-합성 데모 POST /api/demo/{batter|defense|catcher|pitcher}는 도형과 생성된 관절 좌표를 사용하며 MediaPipe 정확도 검증이 아닙니다. 모두 synthetic_demo=true이고 화면에도 명시합니다. 실제 영상 업로드 경로는 MediaPipe를 실행합니다. PNG는 docs/screenshots/, 브라우저 테스트는 frontend-demo/tests/browser.mjs에 있습니다.
-
-**보관 주의:** 원본 업로드 파일은 삭제하지만 overlay.mp4/JPEG에 입력 영상 내용이 남습니다. 결과 JSON과 {id}-assets 디렉터리를 함께 삭제하세요. 인증/보관 기한/공개 서비스용 접근 제어는 미구현입니다.
-
-3D는 매 프레임 골반 중심으로 정렬하므로 실세계 이동 궤적을 표현하지 않습니다. front/side/rear는 시각화 좌표계의 카메라 보기이며 피사체의 실제 정면/측면을 보정한 결과가 아닙니다. 2D 각도 값은 3D 시점을 돌려도 변하지 않습니다.
-
-
-## 스카우팅 추가 (v0.4)
-
-### 추가 파일과 계약
-
-- `app/scouting/report.py`: 역할별 관찰 항목, 영상 리포트, 이벤트별 시각화 연결, 선수 최신 역할별 종합 리포트.
-- `app/scouting/growth.py`: 동일 조건 관찰값 비교, DEMO 점수 예시.
-- `app/analysis/baserunning/analyzer.py`: 주루 영상 평면 자세/이동 후보. 기존 shared 관절 계산을 재사용.
-- `models/result.py`: typed scouting/play/criterion schema. 기존 0.2/0.3 결과 GET 호환 유지.
-- `models/storage.py`: 결과 JSON 기반 선수 기록 조회. 선수 ID를 파일 경로로 사용하지 않음.
-- `frontend-demo/tests/scouting.mjs`, `backend/tests/test_scouting.py`: 새 기능 검증.
-
-### 역할별 항목
-
-| 평가 | 항목 |
+| URL | 내용 |
 | --- | --- |
-| batting | contact, timing, balance, swing_consistency, weight_transfer, head_stability, hip_rotation, shoulder_rotation |
-| defense | reaction, first_step, fielding, footwork, glove_position, throwing_transition, balance, range |
-| catching | receiving, blocking, framing, throwing_transition, stability, balance |
-| pitching | mechanics, balance, release_consistency, lower_body_usage |
-| baserunning | start_reaction, acceleration, running_posture, direction_change, base_approach, sliding, decision_making |
+| http://127.0.0.1:8000/demo/ | 메인 대시보드, 최근 분석, 짧은 영상/DEMO 시작 |
+| http://127.0.0.1:8000/demo/broadcast/ | 방송 분석, LIVE/VOD 탭 |
+| http://127.0.0.1:8000/demo/broadcast/?tab=live | LIVE 탭 |
+| http://127.0.0.1:8000/demo/broadcast/?tab=vod | VOD 탭 |
+| http://127.0.0.1:8000/demo/analyses/ | 과거 분석 기록, 날짜/실제·DEMO 구분 |
+| http://127.0.0.1:8000/demo/analysis/{analysisId} | 하나의 통합 리포트; 실제 UUID로 치환 |
+| http://127.0.0.1:8000/docs | FastAPI API 문서 |
+| http://127.0.0.1:8000/health | 준비 확인 |
 
-모든 criterion은 score, grade, estimated, confidence, confidence_grade, reason과 observation을 갖습니다. **score/grade는 전부 null**: 검증된 채점 기준이 없고 관절 가시성만으로 기량 점수를 만들지 않습니다. observation은 기존 자세 대리 지표이며 score가 아닙니다. 공·배트·글러브·베이스·필드 방향·반응 자극 검출과 보정이 필요한 항목은 null입니다. 주루는 몸통 기울기·균형·첫 이동 후보만 제공하며 실제 가속도, 경기 판단, 슬라이딩 성공을 판정하지 않습니다.
+메인 메뉴는 **대시보드 / 방송 분석 / 분석 기록** 3개입니다. `/demo/live/`는 방송 분석 LIVE 탭으로 redirect합니다. 이전 `/demo/?analysis_id=UUID`도 통합 리포트로 이동합니다.
 
-### API와 응답
+리포트는 종합/타격/수비/포수/투수/주루 탭을 제공하고 미분석 역할은 비활성화합니다. 종합에 날짜·후보 구간·실제 처리 범위·역할·요약·장단점·이전 대비 변화·플레이 목록, 역할 탭에 summary/metrics/장단점/coaching/confidence를 표시합니다. 플레이를 고르면 **같은 영역에서 원본/2D/3D/keyframe/각도**를 전환합니다. 주요 지표 외의 미지원 항목은 펼치기 안에 남습니다.
 
-POST `/api/analyze`에 player_id, analysis_date, comparison_context를 multipart로 추가합니다. 모두 선택이며 선수 ID가 없는 결과도 분석/재조회 가능합니다. player_id는 ASCII 영숫자/_/- 1~64자, analysis_date는 ISO 날짜, comparison_context는 1~80자입니다. 날짜 기본은 Asia/Seoul의 오늘, created_at은 UTC ISO datetime입니다. 서버는 context 선언의 사실 여부를 검증하지 않습니다.
+리포트 ID는 단일 분석 UUID 또는 결과를 가진 VOD job/LIVE session UUID입니다. `api/reports.py`가 세션 내 여러 역할 클립을 묶으며 엔진 결과를 재계산하지 않습니다. 아직 분석 결과가 없는 작업은 과거 리포트 목록에 넣지 않습니다. 목록의 처리 시간은 실제 분석 클립 합계이지 후보 방송 전체 길이가 아닙니다.
 
-```bash
-curl -X POST http://localhost:8000/api/analyze \
-  -F video=@run.mp4 -F role=baserunning -F player_id=PLAYER-001 \
-  -F analysis_date=2026-10-12 -F comparison_context=fixed-side-running
-curl http://localhost:8000/api/players/PLAYER-001/history
-curl http://localhost:8000/api/players/PLAYER-001/scouting-report
-curl 'http://localhost:8000/api/players/PLAYER-001/history?source=demo'
+## 6. 공통 분석 흐름과 역할 구조
+
+```text
+단일 업로드 → process → extract_frames → extract_pose → process_frames
+LIVE/VOD 입력 → shared detector/구간 확인 → segments.execution.analyze_clip
+              → extract_frames → extract_pose → process_frames
+process_frames → analysis.engine.analyze_role
+               → visualization.builder → scouting.build_report
+               → AnalysisResult 검증 → JSON/자산 저장
 ```
 
-다음은 **구조 설명용 JSON이며 실제 평가 결과가 아닙니다**:
+| role | 모듈과 현재 관찰 |
+| --- | --- |
+| batter | 스탠스 폭, 무릎/상체, 팔꿈치, 머리 이동, 골반/어깨선 변화, 손 중심 스윙/팔로스루 후보, 밸런스 |
+| defense | 준비 자세, 영상 평면 첫 이동, 손목 기반 글러브 대리값, 발목 이동, 종료 중심 안정성. infielder/outfielder는 수동 힌트 |
+| catcher | receiving/blocking/throwing_transition 그룹, 무릎/높이/중심, 미트 대리 손목 이동, 일어남·상체 변화·균형 |
+| pitcher | 기존 팔/팔꿈치/어깨/상체 각도, 스트라이드, 하체/골반 이동, 릴리스 손목 후보, 팔로스루/밸런스/폼 유형 추정 |
+| baserunning | 영상 평면 주루 자세, 균형, 첫 이동 후보. 반응시간/가속도/베이스 접근/슬라이딩/판단은 근거 부족으로 null |
 
-```json
-{
-  "schema_version": "0.4.0",
-  "player_id": "PLAYER-001",
-  "analysis_date": "2026-10-12",
-  "scouting_report": {
-    "strengths": [],
-    "development_areas": [],
-    "traits": [],
-    "overall_summary": "영상 기반 자세 관찰; 기량 점수 판정 보류",
-    "ratings": {"batting": null, "defense": null, "catching": null, "pitching": null, "baserunning": null}
-  }
-}
+계산은 `analysis/shared`를 재사용합니다. 공·배트 접촉/실제 글러브/반응 자극/깊이 보정이 필요한 항목은 null입니다. 타자 stance_type, bat_start_position, hands_lead, impact_time, wrist_angle, whiff/contact/foul_or_in_play/pull_or_opposite 등은 실제 성과로 판정하지 않습니다. 미트/글러브 위치는 손목 대리값입니다. 회전/체중 이동은 2D 관찰이지 실제 힘·발 압력 측정이 아닙니다.
+
+`auto`는 분류기 미구현으로 unknown과 confidence 0 후보를 반환합니다. 단일 영상 role 기본은 기존 호환을 위해 pitcher입니다. confidence는 검증된 확률이 아닙니다. 모든 metric은 value/unit/estimated/confidence/confidence_grade/method/reason이며 null을 0이나 실패로 바꾸지 마세요. grade는 high≥0.75, medium≥0.4, 나머지 low입니다.
+
+## 7. 2D/3D와 플레이 연결
+
+- `pose/extractor.py`: MediaPipe 33 landmarks, x/y 정규화, z 상대 깊이, visibility. 유효 pose 3프레임 미만은 insufficient_pose.
+- `visualization/overlay.py` / `joints.py`: 10fps 샘플 원본 프레임의 머리·어깨·팔꿈치·손목·골반·무릎·발목/선과 주요 프레임 각도. 낮은 가시성 관절은 숨김.
+- `keyframes.py`: 타자 stance/load/front_foot_landing/swing_start/estimated_impact/follow_through; 투수 setup/leg_lift/stride/arm_cocking/release/follow_through; 그 외 공통 단계. candidate/reference_only/unavailable을 구분. 앞발 착지/임팩트는 confidence 0 참고 프레임이며 검출 성공이 아님.
+- `pose3d.py`: MediaPipe 상대 z와 영상 x/y를 골반 중심/영상 몸통 길이로 정규화. x=영상 오른쪽, y=위, z=카메라 쪽, 단위 visual_torso_lengths. **실제 3D 복원/미터/생체역학이 아니며 estimated=true, confidence≤0.35**. 누락 pose는 joints={}이며 다른 프레임을 복사하지 않음.
+- `builder.py`: overlay.mp4(H.264/libx264/yuv420p/faststart), keyframe-NNNN.jpg 및 pose3d JSON. `report.js`의 Three.js가 재생/회전/시점/슬라이더/키프레임 이동을 담당.
+- warning 색상은 지원 근거와 문제 항목 모두 confidence≥0.75일 때만. 3D는 저신뢰이므로 경고색을 사용하지 않음.
+- frame은 10fps **샘플 인덱스**이며 원본 영상 프레임 번호가 아님. 클립 이벤트/키프레임은 clip-relative; 방송 초는 broadcast_offset_seconds를 더함. LIVE는 세션 경과 시간으로 원본 방송 PTS와 동일하지 않음.
+
+단일 업로드 원본은 분석 후 삭제되어 원본 버튼이 비활성화됩니다. VOD/파일 리플레이에 원본이 남아 있을 때만 원본 재생을 제공합니다. overlay를 원본이라고 표시하지 마세요. 3D front/side/rear는 표시 좌표계 카메라 뷰이며 실제 피사체 방향 보정이 아닙니다.
+
+## 8. Scouting report와 성장 추적
+
+`scouting/report.py`의 scouting_report는 player_id/date/source, strengths/development_areas/traits/overall_summary, ratings/rating_reasons, role_evaluations, plays를 제공합니다. rating 그룹은 batting/defense/catching/pitching/baserunning입니다.
+
+역할별 평가 항목:
+
+- batting: contact/timing/balance/swing_consistency/weight_transfer/head_stability/hip_rotation/shoulder_rotation.
+- defense: reaction/first_step/fielding/footwork/glove_position/throwing_transition/balance/range.
+- catching: receiving/blocking/framing/throwing_transition/stability/balance.
+- pitching: mechanics/balance/release_consistency/lower_body_usage.
+- baserunning: start_reaction/acceleration/running_posture/direction_change/base_approach/sliding/decision_making.
+
+각 criterion은 score/grade/estimated/confidence/reason/observation을 포함합니다. **검증된 채점 기준이 없으므로 실제 score/grade/ratings는 전부 null**입니다. 숫자 observation은 자세 대리 지표이지 공식 스카우팅 점수가 아닙니다. 현재 장단점은 confidence≥0.4인 머리/골반 안정성 관찰의 보수적 임계값으로만 생성됩니다.
+
+plays는 이벤트 후보, keyframe, 시각화 참조, confidence 및 국소 feedback을 연결합니다. 해당 시각 샘플 차이가 0.051초 이내인 프레임만 연결하고 대응 keyframe이 없으면 null입니다. 현재 국소 장단점은 빈 배열이 정상이며 전체 영상 feedback은 context_feedback.scope=whole_clip로 분리합니다.
+
+`scouting/growth.py`는 같은 선수/역할/source의 이전 관찰을 비교합니다. comparison_context가 같고 비어 있지 않으며, completed/방법 버전/손/포지션/단위/계산 방법이 같고 양쪽 confidence≥0.4인 숫자만 delta를 생성합니다. 나머지는 null+reason. source=real과 demo는 분리합니다. 날짜 기본은 Asia/Seoul의 오늘, created_at은 UTC; tzdata는 Windows 시간대 지원에 필요합니다.
+
+criterion_scores와 rating_deltas는 아직 null입니다. `/api/demo/growth`의 62→71→77(+9/+6)는 confidence 0의 임의 DEMO 예시이며 실제 기록에 저장하지 않습니다. 변화는 실제 기량 향상 판정이 아닙니다.
+
+## 9. LIVE / VOD와 공통 구간 탐색
+
+**LIVE/VOD는 별도 자세 분석기를 만들지 않습니다.** source adapter/구간 discovery만 다르고 SignalDetector/evidence 및 `segments/execution.py` 이후 엔진은 공유합니다.
+
+- VOD exact: 사람 확인 start/end와 role 지정, 스캔 생략. unknown은 보류.
+- approximate: start/end+buffer_minutes 또는 center_time±search_window_minutes/2만 저비용 스캔. 범위 밖은 스캔/분석하지 않음.
+- auto: 전체 저비용 스캔. 자동 역할은 unknown이므로 수정/확인 후 정밀 분석.
+- 기본 스캔10초(5~60 설정), 최대10,000 프레임 예산, 가까운 후보 병합과 앞뒤10초 미리보기 buffer. 실제 분석은 core 범위만.
+- 기본 정밀 클립10초·최대20개, 최대 설정30초·200개. 초과는 partial_budgeted/review_required. 전체 긴 구간을 다 분석했다는 뜻이 아님.
+- 방송 파일 최대24시간, 업로드 기본8GiB. WONY_BROADCAST_MAX_BYTES로 한도 설정 가능하나 메모리/디스크/실제 부하 확인 필요.
+- LIVE HTTP(S) stream URL 또는 파일 리플레이(100MiB). 플랫폼 웹페이지 URL 해석/플랫폼 adapter는 미지원.
+- LIVE: IDLE→WATCHING→BASEBALL_CANDIDATE→BASEBALL_ANALYZING→BASEBALL_ENDING→REPORT_GENERATING→WATCHING. 기본10초 감시, 30초 반복확인/최소3hit, 종료유예240초(180~600 설정). 무신호 유예에는 pose/scouting 미실행.
+- 알려진 사람 역할 힌트+다중근거 때만 LIVE 클립 획득. 캡처 클립도 5초 간격/끝 프레임 재검사 후 기존 엔진으로 넘김. stop은 제한시간 있는 현재 입력/분석 완료 후 종료.
+
+기본 탐지기는 **그라운드색 후보뿐**이고 confidence≤0.49/review_required입니다. 이것만으로 LIVE 정밀 분석은 활성화되지 않습니다. 선택 `WONY_SEGMENT_ONNX`는 로컬 YOLOv8 COCO raw ONNX [1,84,N] 경로입니다. 모델은 포함하지 않았습니다. bat≥0.8+glove≥0.8+field≥0.25, threshold≥0.8의 다중근거 규칙을 사용합니다. 공 단독은 확정 근거가 아닙니다. 실제 객체/VR UI 탐지 정확도는 미검증입니다.
+
+진행: SCAN→BASEBALL_SEGMENT_DETECTION→SEGMENT_EXTRACTION→ROLE_ANALYSIS→POSE_ANALYSIS→SCOUTING_REPORT→COMPLETE. 역할 선택 단계 뒤 실제 pose 기반 역할 계산은 공통 엔진에서 수행됩니다. 대상 없으면 정밀 단계를 건너뜁니다. 프로세스 재시작은 interrupted이며 자동 재개는 미구현입니다.
+
+## 10. API 빠른 참고
+
+| API | 용도 |
+| --- | --- |
+| POST /api/analyze | 단일 영상; mode=auto_segments/segments도 호환 |
+| GET /api/analysis/{id} | 저장된 개별 결과 그대로 재조회 |
+| GET /api/analysis/{id}/assets/{filename} | 제한된 overlay/keyframe 자산 |
+| POST /api/demo/{role} | 다섯 역할 synthetic_demo=true |
+| POST /api/vod | exact/approximate/auto 또는 수동 segments |
+| POST /api/broadcasts, GET /api/broadcasts/{id} | 긴 영상 생성/진행 조회; GET /broadcasts 목록은 없음 |
+| POST /api/broadcasts/{id}/segments | 보정 후 재분석 |
+| GET /api/broadcasts/{id}/source, DELETE /api/broadcasts/{id} | 원본/작업 보관 관리 |
+| POST /api/live, GET /api/live/{id} | 시작/진행 |
+| POST /api/live/{id}/stop, PATCH /api/live/{id}/role | 종료/사람 역할 힌트 변경 |
+| POST /api/live/{id}/segments | 종료된 파일 리플레이를 VOD 경로로 보정 |
+| DELETE /api/live/{id} | 종료 세션/리플레이 삭제 |
+| GET /api/reports, GET /api/reports/{id}, GET /api/reports/{id}/source | 읽기 전용 목록/통합 결과/보관 원본 |
+| GET /api/players/{id}/history, /api/players/{id}/scouting-report | 선수 이력/역할별 최신 종합 |
+
+단일 업로드 role=batter/defense/catcher/pitcher/baserunning/auto, throwing_hand=right|left, position_type=auto|infielder|outfielder. 선수 ID는 ASCII 영숫자/_/- 1~64자, analysis_date는 ISO 날짜, comparison_context는1~80자입니다.
+
+PowerShell 예시(별도 터미널, 단일 분석):
+
+```powershell
+curl.exe -X POST http://127.0.0.1:8000/api/analyze -F "video=@C:\clips\bat.mp4" -F "role=batter" -F "player_id=PLAYER-001" -F "comparison_context=fixed-side"
 ```
 
-`scouting_report.plays[]`는 이벤트 원문, confidence/estimated, metrics, strengths/weaknesses/coaching, keyframe과 visualization_reference를 연결합니다. 해당 시각의 샘플 프레임(허용 차이 0.051초)을 연결하며 범위 밖이면 다른 프레임으로 대체하지 않습니다. 정확히 대응하는 단계 키프레임이 없으면 keyframe=null, 3D 프레임/2D 영상 참조는 유지합니다. 이벤트는 휴리스틱 후보이며 확인된 타격/포구/주루 플레이가 아닙니다. 한 영상의 여러 플레이 자동 분리는 아직 없습니다.
+`curl`이 PowerShell alias인 환경이 있어 **curl.exe**를 사용하세요. 복잡한 segments JSON 요청은 우선 /docs 또는 방송 UI로 확인합니다. 단일 분석은 동기200, LIVE/VOD 작업은202와 ID/진행 조회입니다. 충분한 pose가 없으면200+insufficient_pose이며 정상 테스트 시나리오입니다. 손상 입력/잘못된 역할422, 용량 초과413, 처리중503, 내부 단일 분석 실패500입니다. completed가 플레이 성공/접촉을 의미하지 않습니다.
 
-플레이별 장단점은 검증된 국소 근거가 없어 현재 빈 배열이며 코칭은 중립적 프레임 확인 안내입니다. 기존 영상 전체 장단점은 `context_feedback.scope=whole_clip`로 분리합니다. 영상 전체 피드백을 특정 이벤트의 성과로 표시하지 마세요.
+## 11. 저장/보관/운영
 
-### 선수 종합과 성장 추적
+기본 data에 {id}.json, {id}-assets/overlay.mp4·keyframe JPG, broadcasts/{job}/job.json·source.upload, live/{session}/session.json·선택 source.upload를 저장합니다. WONY_DATA_DIR로 변경할 때는 **절대 경로와 쓰기 권한**을 확인하세요.
 
-GET history는 points/count/skipped_records와 경고를 반환합니다. GET scouting-report는 역할별 가장 최근 분석, 원본 analysis_id/date, 종합 strengths/development_areas/traits와 플레이 참조를 반환합니다. 역할별 최신 분석일은 서로 다를 수 있으며 서버가 선수의 동일 인물을 검증하지 않습니다. 기존 ID 없는 결과는 선수 기록에 자동 포함하지 않습니다.
+단일 업로드 원본/정규화 임시 파일은 삭제하지만 오버레이와 JPEG에는 영상 내용이 남습니다. VOD/파일 리플레이 원본은 보정용으로 남습니다. URL LIVE 전체는 녹화하지 않으며 과거 보정은 별도 녹화 VOD 업로드가 필요합니다. 작업/세션 DELETE는 파생 분석 JSON/자산까지 삭제하지 않습니다.
 
-source 기본 real은 실제 업로드 경로이고 demo는 합성 pose 경로입니다. 실제/합성, 역할을 분리해서 이전 기록을 찾습니다. comparison_context가 같고 비어 있지 않으며 상태 completed, 방법 버전/손/포지션/단위/계산 방법이 동일하고 양쪽 confidence≥0.4인 숫자만 delta를 계산합니다. 미충족이면 delta=null과 reason을 반환합니다. **영상 평면 대리 지표 변화이며 실제 성장/힘 전달 개선 판정이 아닙니다.**
+LIVE1개/VOD1개, 정밀 엔진 lock 공유. 외부 큐/인증/사용자 격리/DB 인덱스/자동 재개/보관기한은 미구현입니다. URL 기본 public DNS 검사는 있지만 HLS 참조/redirect/DNS 변화의 완전한 egress 격리는 미구현이므로 공개 배포 준비가 끝난 상태가 아닙니다.
 
-points의 `criterion_scores["batting.balance"]` 등에 score/previous_score/delta 구조를 준비했지만 현재 모두 null입니다. `rating_deltas`도 null입니다. 검증된 채점 엔진을 추가하기 전 관찰값을 0~100점으로 변환하지 마세요. GET `/api/demo/growth`만 62→71→77, +9/+6의 구조 설명용 임의 예시를 반환합니다. 모든 항목 synthetic_demo=true, confidence=0이며 선수 기록에 저장하지 않습니다.
+## 12. 테스트 — 현재 105개
 
-### UI와 한계
+최신 Linux/Python3.12 실행 기록: **pytest105개 통과, 의존성 deprecation 경고3개**. 이번 문서 작업에서는 수집만 다시 확인하여105개임을 검증했습니다. 테스트 수집 성공은 Windows 실행 성공을 의미하지 않습니다. Windows 실행은 아직 미검증입니다.
 
-Scouting Report 탭에 선수 요약, 다섯 역할, 강점/개선점, 플레이별 분석, 성장 추적을 표시합니다. 플레이의 2D/3D 보기 버튼으로 Motion Lab 프레임에 이동합니다. 선수 기록 조회는 현재 결과의 source를 유지하고 과거 영상 프레임도 다시 조회할 수 있습니다. DEMO 예시는 별도 버튼/라벨로 구분합니다.
+프로젝트 루트, PowerShell:
 
-WONY PHONE에 향후 표시하기 좋은 항목: 선수/날짜/역할, 추정 라벨과 신뢰도가 있는 자세 관찰값, 후보 이벤트 시각과 시각화 링크, 동일 조건 관찰값 변화 및 보류 사유. 실제 기량 점수/공식 스카우트 등급/실제 성장/주루 속도·가속도/판단 성공/공 접촉·포구 성과는 아직 표시하면 안 됩니다. VR 아바타 관절은 실제 신체와 다르고 3D는 미보정 추정입니다. WONY PHONE 통합과 캐릭터 모델은 이번 변경에 포함하지 않았습니다.
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m pytest --collect-only -q
+```
 
-검증: pytest 72개 통과(의존성 경고 3개), 기존 브라우저 회귀와 신규 scouting 브라우저 테스트 통과. 5역할 보고서, 점수 보류, 메타데이터 유효성, 부족 pose, 결과 재조회, 조건 불일치 비교 거부, 실제/DEMO 분리, 선수 종합, 리포트→2D/3D 이동, 모바일 폭을 확인했습니다. 실제 야구/VR 평가 정확도는 검증하지 않았습니다.
+Linux 루트: `.venv/bin/python -m pytest -q`. pytest.ini가 backend를 pythonpath에 추가합니다. backend 폴더에서도 `../.venv/bin/python -m pytest -q`로 실행할 수 있습니다.
+
+브라우저 테스트는 실행 중 서버 + Node.js/npm + 지원 Chromium 필요. Windows에서 설치된 Chrome 경로를 확인해 설정하세요:
+
+```powershell
+cd .\frontend-demo
+npm ci
+$env:CHROMIUM_PATH = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+Test-Path $env:CHROMIUM_PATH
+$env:WONY_BASE_URL = "http://127.0.0.1:8000"
+npm run test:browser
+npm run test:broadcast
+npm run test:modes
+```
+
+경로가 다르면 실제 Chrome/Chromium/Edge 실행 파일로 바꾸세요. 기본 테스트 경로 `/usr/bin/chromium`은 Windows에 없습니다. Node/browser가 필요 없는 서버 실행과 구분하세요. test:scouting은 같은 통합 UI 회귀의 alias이므로 test:browser와 별도 중복 검증이 아닙니다. 이전 Linux Chromium에서 이3종이 통과했습니다. 브라우저 테스트가 PNG/분석 데이터를 생성하므로 git status를 확인하세요.
+
+검증 범위: 다섯 역할/부족 pose/schema/confidence/실패 정리/재조회, 시각화 자산, scouting/growth 조건 비교, 구간 예산/보정, LIVE 상태/분석 차단, 읽기 전용 리포트 그룹/메뉴/통합 역할 탭/재생·시점·키프레임/원본 부재/모바일. 생성 빈 영상은 실제 ffmpeg/MediaPipe 경로, 합성 pose는 schema/계산 테스트입니다.
+
+## 13. 실제 미검증/미구현 항목
+
+- 실제 사람 야구와 VR 아바타의 pose/각도/이벤트/코칭 정확도. 합성 DEMO/검은 영상 테스트로 이를 주장하지 않기.
+- 360/equirectangular 투영, 다중 인물 선택, 한 영상의 개별 플레이 자동 분할.
+- 자동 역할/내야·외야 분류, 배트·공·글러브 접촉, 베이스/필드 보정, 실제 경기 성공·실패.
+- 실제 구속/타구속도/힘 전달/발 압력/체중 분포, 정확한 3D 깊이/축 회전, 검증된 점수 체계.
+- 선택 ONNX 실제 방송/VR 오탐·누락, VR UI/스코어보드/반복 자세 classifier.
+- 외부 HTTP/HLS 라이브 에지·재접속·지연·타임코드, 1~10시간 성능/메모리/디스크, Windows 실제 호환성.
+- 캐릭터형3D 모델, 플랫폼 고유 adapter, WONY PHONE 통합, production 큐/인증/보관 체계.
+
+## 14. Claude Code가 유지해야 할 경계
+
+1. WONY PHONE 저장소/통합 코드를 수정하지 않기. 현재 작업은 독립 엔진의 Windows 실행·확인.
+2. 미커밋/미추적 소스를 보존하기. reset/clean/checkout/clone으로 현재 구현을 지우지 않기. commit/push는 별도 승인 전 금지.
+3. 실행 문제를 해결하려고 requirements 핀/MediaPipe API/numpy/OpenCV 구성을 임의 업그레이드하지 않기. 원인과 재현을 확인하고 최소 수정 범위를 먼저 정리하기.
+4. analysis/shared, 역할 analyzer, models/result 계약, 기존 GET 호환과 플레이 timestamp를 런타임 편의를 위해 바꾸지 않기.
+5. LIVE/VOD 별도 분석 엔진을 만들지 않기. source/discovery만 분리하고 execution/process_frames 경로 공유.
+6. confidence/null/estimated/unknown/review_required/DEMO·실제 분리/score null 정책을 유지하기. 구속·성공·힘·점수를 임의 생성하지 않기.
+7. 메인3메뉴 및 단일 통합 리포트 구조 유지. 2D/3D/Scouting을 별도 메인 화면으로 다시 분리하지 않기.
+8. vendor 배포 파일/라이선스와 누락 pose 처리, 경고색 임계값, 원본 미보관 표시를 유지하기.
+9. 실패 테스트를 삭제/약화하거나 결과 데이터/비밀값/.venv/캐시를 Git에 넣지 않기. 테스트 실패는 설치 문제와 기존 코드 문제를 구분해서 보고하기.
+10. 사용자 영상/분석 결과/보관 원본을 허가 없이 삭제하거나 외부 공유하지 않기.
+
+## 15. Windows 문제 확인 순서
+
+- **경로/import:** 실행 위치는 프로젝트 루트. `--app-dir backend` 없이 루트에서 app.main을 실행하면 import 실패. 공백 경로는 따옴표; 한글/OneDrive/긴 경로 문제 진단에는 `C:\dev\...`처럼 짧은 영문 경로 권장. 원인 확인 없이 소스 경로를 하드코딩하지 않기.
+- **venv/interpreter:** py -3.12 및 .venv\Scripts\python.exe를 확인. Linux .venv/bin/python은 Windows에서 사용 불가. 이미 깨진 venv면 사용자 소스/데이터를 보존하고 새 가상환경을 별도 위치에 재생성.
+- **FFmpeg:** Get-Command ffmpeg, Get-Command ffprobe; 둘 다 같은 설치의 bin을 PATH에 등록하고 새 터미널. ffmpeg-python 패키지가 실행 파일을 대신하지 않음. libx264 없으면 오버레이 인코딩 실패.
+- **MediaPipe:** 64-bit Python3.12/지원 wheel 확인. ARM/native 또는 다른 Python 버전의 wheel 부재를 엔진 오류로 단정하지 않기. DLL load failed면 아키텍처/설치 로그/필요한 Microsoft VC++ runtime 확인. 시스템 python과 venv pip 혼용 금지.
+- **OpenCV:** opencv-contrib-python 핀 사용. opencv-python/headless를 같은 환경에 추가 설치하지 않기. 영상 재생 실패는 codec/디코딩 로그와 FFmpeg를 확인.
+- **시간대:** tzdata 누락은 Asia/Seoul ZoneInfo 오류를 만들 수 있음. requirements 전체 설치 확인 후 수정.
+- **권한/cache:** Windows에 Linux /tmp 경로를 그대로 설정하지 않기. 필요한 경우 `$env:MPLCONFIGDIR = Join-Path $env:TEMP 'wony-mpl'` 후 디렉터리 생성. WONY_DATA_DIR는 절대 쓰기 가능 폴더. 백신/동기화가 미디어 파일을 잠그는 경우도 확인.
+- **포트/브라우저:** 8000 사용 중이면 uvicorn --port 8001과 UI/테스트 주소를 함께 변경. 서버 콘솔을 유지. ES module/importmap은 file://로 열지 말고 FastAPI HTTP URL로 열기. WebGL 미지원은 3D 표시 실패이지 pose 분석 성공/실패와 별개.
+- **긴 작업:** timeout, disk/full, 파일 codec, HLS/URL 만료·방화벽을 확인. 공개 HTTP stream URL만 받고 내부 주소/플랫폼 페이지를 우회 허용하지 않기. 첫 확인은 짧은 로컬 파일과 DEMO부터 시작.
+
+첫 보고에는 Python/ffmpeg 버전, 설치·서버·health·3메뉴·통합 리포트 확인, pytest 실행 개수/결과, 실제 영상 사용 여부, Windows 특이 오류와 재현을 구분해 적으세요.

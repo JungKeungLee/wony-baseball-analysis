@@ -31,7 +31,9 @@ def process(path, analysis_id, hand, role='pitcher', position_type='auto', playe
     return process_frames(frames, samples, analysis_id, hand, role, position_type, player_id=player_id, analysis_date=analysis_date, comparison_context=comparison_context)
 
 
-def process_frames(frames, samples, analysis_id, hand, role='pitcher', position_type='auto', synthetic=False, player_id=None, analysis_date=None, comparison_context=None):
+def process_frames(frames, samples, analysis_id, hand, role='pitcher', position_type='auto', synthetic=False, player_id=None, analysis_date=None, comparison_context=None, stage_callback=None):
+    if stage_callback:
+        stage_callback('ROLE_ANALYSIS')
     result = {
         'id': analysis_id, 'schema_version': '0.4.0',
         'throwing_hand': hand, 'sample_fps': 10,
@@ -57,6 +59,8 @@ def process_frames(frames, samples, analysis_id, hand, role='pitcher', position_
         result['status'] = 'insufficient_pose'
     try:
         result['visualization'] = build_visualization(frames, samples, result, data_dir())
+        if stage_callback:
+            stage_callback('SCOUTING_REPORT')
         result['scouting_report'] = build_report(result)
         result = AnalysisResult.model_validate(result).model_dump(mode='json')
         save_result(result)
@@ -95,7 +99,16 @@ async def create_analysis(
     player_id: str | None = Form(None, pattern=r'^[A-Za-z0-9_-]{1,64}$'),
     analysis_date: date | None = Form(None),
     comparison_context: str | None = Form(None, min_length=1, max_length=80),
+    mode: Literal['single', 'auto_segments'] = Form('single'),
+    segments: str | None = Form(None),
 ):
+    if mode == 'auto_segments' or segments is not None:
+        from app.api.broadcasts import submit
+        from app.segments.jobs import defaults
+        return await submit(video, defaults(), segments, {
+            'throwing_hand': throwing_hand, 'position_type': position_type, 'player_id': player_id,
+            'analysis_date': analysis_date.isoformat() if analysis_date else None,
+            'comparison_context': comparison_context})
     if not processing_lock.acquire(blocking=False):
         raise HTTPException(503, 'Another video is being analyzed; retry later')
     analysis_id = str(uuid4())

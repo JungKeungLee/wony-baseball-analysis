@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "test:browser": "node tests/browser.mjs",
-    "test:scouting": "node tests/scouting.mjs"
+    "test:scouting": "node tests/scouting.mjs",
+    "test:broadcast": "node tests/broadcast.mjs",
+    "test:modes": "node tests/modes.mjs"
   },
   "devDependencies": {
     "playwright": "1.51.1"

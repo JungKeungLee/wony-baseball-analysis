@@ -2,6 +2,10 @@
 
 WONY PHONE과 분리된 Python/FastAPI 야구 영상 분석 MVP입니다. 타자·수비·포수·투수·주루의 단일 인물 영상에서 2D 자세 대리 지표를 분석합니다. 서비스 적용 우선순위는 타자 → 수비 → 포수 → 투수입니다. VR/360 영상 투영이나 VR 기기 연동은 아직 구현하지 않았습니다. VR 영상은 먼저 일반 평면 영상으로 변환해야 합니다.
 
+## 현재 UI
+
+메인 메뉴는 **대시보드 · 방송 분석 · 분석 기록**입니다. `/demo/broadcast/`에서 LIVE/VOD를 선택하고, 모든 결과는 `/demo/analysis/{id}`의 통합 리포트에서 봅니다. 역할별 정보·scouting·성장·플레이별 원본/2D/3D/keyframe을 한 페이지에서 탐색합니다. `/demo/analyses/`에 실제/DEMO 기록을 분리해서 제공합니다. [통합 UI 계약](docs/UNIFIED_UI.md)을 참고하세요. 아래 v0.3/v0.4 탭 설명은 이전 버전 기록입니다.
+
 ## 설치와 실행
 
 Python 3.12와 PATH에 등록된 ffmpeg가 필요합니다. Linux에서는 시스템 패키지 관리자로 ffmpeg를 설치하세요. MediaPipe 0.10.21의 번들 Pose 모델을 사용하며 별도 키나 모델 다운로드는 필요하지 않습니다.
@@ -70,7 +74,7 @@ curl http://localhost:8000/api/analysis/REPLACE_WITH_RESULT_ID
 - 충분한 관절이 없는 영상은 HTTP 200과 `status=insufficient_pose`를 반환합니다. 분석 완료 여부와 자세 검출 성공을 구분하세요.
 - 구속은 항상 `null`입니다. 숫자 OCR이나 보정된 공 궤적 측정은 구현하지 않았습니다.
 
-원본 업로드 파일은 처리 후 삭제하지만 **오버레이 MP4와 키프레임 JPEG에는 원본 영상 내용이 남습니다.** JSON은 `backend/data/`에 보관합니다. `WONY_DATA_DIR`로 보관 위치를 변경할 수 있습니다. 결과에는 자세 데이터가 남으므로 필요에 따라 삭제하세요. 인증, 사용자별 접근 제어, 보관 정책이 없는 로컬 개발 MVP이므로 공개 서비스 배포 전 추가 구현이 필요합니다.
+원본 업로드 파일은 처리 후 삭제하지만 **오버레이 MP4와 키프레임 JPEG에는 원본 영상 내용이 남습니다.** JSON은 `data/`에 보관합니다. `WONY_DATA_DIR`로 보관 위치를 변경할 수 있습니다. 결과에는 자세 데이터가 남으므로 필요에 따라 삭제하세요. 인증, 사용자별 접근 제어, 보관 정책이 없는 로컬 개발 MVP이므로 공개 서비스 배포 전 추가 구현이 필요합니다.
 
 구조 및 다음 작업은 [docs/HANDOFF.md](docs/HANDOFF.md)를 참고하세요.
 
@@ -106,3 +110,17 @@ curl http://localhost:8000/api/players/PLAYER-001/scouting-report
 선수 기록은 기본 `source=real`이며 합성 기록은 `?source=demo`로 따로 조회합니다. 같은 역할·촬영 조건·방법·단위와 충분한 신뢰도가 있을 때만 자세 대리 지표의 이전 대비 차이를 계산합니다. 차이는 기량 향상의 증거가 아닙니다. `GET /api/demo/growth`의 62→71→77 예시는 **DEMO 임의 데이터**로 실제 기록에 저장하지 않습니다.
 
 검증: 백엔드 pytest **72개 통과**, 기존 시각화 및 새 리포트 Chromium 브라우저 테스트 통과. 실제 야구/VR 영상 정확도와 자동 플레이 분리는 아직 검증하지 않았습니다. [Windows 실행 안내](docs/WINDOWS.md), [리포트 화면 캡처](docs/screenshots/scouting-report.png)를 참고하세요.
+
+
+## 긴 방송 분석
+
+기존 엔진 앞에 sparse segment detection layer를 추가했습니다. `POST /api/analyze`의 `mode=auto_segments` 또는 수동 `segments`를 사용하면 HTTP 202 작업 ID를 반환하고 `/api/broadcasts/{id}`에서 진행/구간을 조회합니다. `/demo/` 하단에 타임라인·구간 미리보기·수정·재분석이 있습니다. 기본 10초 간격 스캔, 근접 병합/버퍼, 최대 스캔 프레임·정밀 클립 예산을 지원합니다.
+
+**현재 기본 탐지는 색상 기반 검토 후보이며 완성된 야구 분류기가 아닙니다.** 선택적 로컬 YOLOv8 COCO ONNX로 배트/글러브 다중 근거를 추가할 수 있습니다. 역할 unknown/낮은 confidence는 정밀 분석을 건너뛰며 사람의 구간·역할 지정 후 분석합니다. VR UI/자동 역할 분류와 실제 장시간 정확도 검증은 미지원입니다. 전체 방송 원본은 보정용으로 보관합니다. [API·비용·모델·보관 정책](docs/BROADCAST_SEGMENTS.md)을 참고하세요.
+
+
+## LIVE / VOD
+
+`/demo/live/`는 HTTP(S) 스트림 또는 파일 리플레이를 저비용 감시하고 반복 다중 신호 확인/종료 유예를 적용합니다. `/demo/broadcast/`는 정확 구간, 대략 구간+버퍼, 중심 시점±탐색 폭, 전체 자동 탐색을 지원합니다. 둘 다 같은 detector와 `segments/execution.py`를 통해 기존 다섯 역할/2D/3D/events/scouting 엔진을 재사용합니다.
+
+API: `POST /api/live`, `GET /api/live/{id}`, `POST /api/live/{id}/stop`, `PATCH /api/live/{id}/role`; `POST /api/vod`와 기존 broadcast 조회/수정 API. **기본 색상 단서만으로는 LIVE 분석이 활성화되지 않으며 자동 역할은 unknown**입니다. 선택 객체 모델과 사람 역할 힌트가 필요합니다. [설정·요청 예시·파일 목록·검증 한계](docs/LIVE_VOD.md)를 참고하세요.
