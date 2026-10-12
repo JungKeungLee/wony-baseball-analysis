@@ -162,7 +162,7 @@ def validate_clip(path,selection:TargetSelection,output_root:Path,identifier=Non
         'target_attributed_pose_frames':len(mapped),'pose_attribution_rejected_frames':len(raw)-len(mapped),
         'usable_pitcher_pose_frames':len(pose_rows(mapped,profile='pitcher')),
         'pose_quality':quality_report(mapped,len(frames)),
-        'tracking_states':{state:sum(f['status']==state for f in tracking) for state in ['confirmed','tracking','low_confidence','tracking_lost','reidentification_required']},
+        'tracking_states':{state:sum(f['status']==state for f in tracking) for state in ['confirmed','tracking','low_confidence','temporary_occlusion','tracking_lost','reidentification_required']},
         'pose_margin':selection.pose_margin,
         'estimated_3d_frames':sum(bool(f['joints']) for f in result['visualization']['pose3d']['frames']),
         'sampling_policy':'10fps tracking/pose on native target crops; preview only at 960px',

@@ -3,6 +3,7 @@
 Appearance/scene guards are heuristics, not identity recognition. Successful CSRT
 updates cannot certify identity through occlusion or similar-looking avatars.
 """
+from collections import deque
 from copy import deepcopy
 import math
 import cv2
@@ -56,6 +57,24 @@ def appearance(frame,bbox):
     return cv2.normalize(histogram,None).astype(np.float32)
 
 
+# Short visual-effect grace (catch glow, dirt, SBO target overlays). Real catcher clips lost WONY for
+# 1-2 samples while position/size stayed continuous. The appearance threshold (0.65) is unchanged; the
+# grace only applies when geometry is *stricter* than normal tracking, never certifies the target, and
+# pauses analysis. Anything else, or a longer dip, is still terminal tracking_lost.
+GRACE_SECONDS = .35
+GRACE_MIN_IOU = .8
+GRACE_MAX_MOVE = .05      # of the last confirmed bbox diagonal, per decision
+GRACE_AREA = (.8, 1.25)
+GRACE_PREDICTION_GATE = .08  # predicted-center search radius, fraction of bbox diagonal
+
+
+def box_iou(a, b):
+    ax, ay, aw, ah = a; bx, by, bw, bh = b
+    ix = max(0.0, min(ax+aw, bx+bw)-max(ax, bx)); iy = max(0.0, min(ay+ah, by+bh)-max(ay, by))
+    inter = ix*iy
+    return inter/(aw*ah+bw*bh-inter) if aw*ah+bw*bh-inter > 0 else 0.0
+
+
 class ManualTargetTracker:
     def __init__(self,selection:TargetSelection,factory=None):
         self.selection=selection
@@ -63,6 +82,8 @@ class ManualTargetTracker:
         self.tracker=None;self.bbox=None;self.reference=None;self.previous=None
         self.status='user_confirmation_required';self.reason=None;self.lost_at=None
         self.previous_time=None
+        self.history=deque(maxlen=4)  # confirmed (time, bbox) for motion prediction
+        self.grace_start=None;self.candidate=None
 
     def record(self,t):
         return {'player_id':'wony','source_time':float(t),'status':self.status,
@@ -73,11 +94,35 @@ class ManualTargetTracker:
             'reason':self.reason,'lost_at':self.lost_at,
             'analysis_allowed':self.status in ('confirmed','tracking'),
             'reidentification_required':self.lost_at is not None,
-            'next_state':'reidentification_required' if self.lost_at is not None else None}
+            'next_state':'reidentification_required' if self.lost_at is not None else None,
+            # During temporary_occlusion the CSRT box is only a candidate/search region, not a confirmed WONY.
+            'candidate_bbox':list(self.candidate) if self.status=='temporary_occlusion' and self.candidate else None,
+            'grace_started_at':self.grace_start if self.status=='temporary_occlusion' else None}
 
     def require_reidentification(self):
         """Explicit recovery state, never search/reinitialize automatically."""
         if self.lost_at is not None:self.status='reidentification_required'
+
+    def predicted_center(self,t):
+        """Constant-velocity center from the last confirmed boxes; a search gate, not a detection."""
+        if len(self.history)<2:return None
+        (t0,a),(t1,b)=self.history[-2],self.history[-1]
+        if t1<=t0:return None
+        c0=np.array(a[:2])+np.array(a[2:])/2;c1=np.array(b[:2])+np.array(b[2:])/2
+        return c1+(c1-c0)/(t1-t0)*(t-t1)
+
+    def grace(self,t,bbox):
+        """Allow a brief appearance dip only with strict continuity to the last confirmed WONY box."""
+        start=self.grace_start if self.grace_start is not None else t
+        if t-start>GRACE_SECONDS+1e-6:return None
+        previous=np.array(self.bbox,dtype=float);current=np.array(bbox,dtype=float)
+        diagonal=float(np.linalg.norm(previous[2:]));center=current[:2]+current[2:]/2
+        move=float(np.linalg.norm(center-previous[:2]-previous[2:]/2))/diagonal
+        area=float(current[2]*current[3]/(previous[2]*previous[3]))
+        if box_iou(previous,current)<GRACE_MIN_IOU or move>GRACE_MAX_MOVE or not GRACE_AREA[0]<=area<=GRACE_AREA[1]:return None
+        predicted=self.predicted_center(t)
+        if predicted is not None and float(np.linalg.norm(center-predicted))/diagonal>GRACE_PREDICTION_GATE:return None
+        return start
 
     def lose(self,t,reason):
         self.status='tracking_lost';self.reason=reason;self.lost_at=float(t)
@@ -106,7 +151,7 @@ class ManualTargetTracker:
                 return self.lose(t,'Rounded selection exceeds source pixels')
             self.tracker=self.factory();self.tracker.init(frame,self.bbox)
             self.reference=appearance(frame,self.bbox);self.previous=gray
-            self.confidence=.6;self.status='confirmed'
+            self.confidence=.6;self.status='confirmed';self.history.append((t,self.bbox))
             return self.record(t)
         # A broad scene change interrupts attribution rather than guessing a new avatar.
         scene_change=float(np.mean(np.abs(gray.astype(float)-self.previous.astype(float)))/255)
@@ -126,10 +171,20 @@ class ManualTargetTracker:
             return self.lose(t,'Abrupt target displacement/scale change')
         similarity=1-float(cv2.compareHist(self.reference,appearance(frame,bbox),cv2.HISTCMP_BHATTACHARYYA))
         if similarity<.65:
-            return self.lose(t,'Appearance confidence dropped; human reselection required')
+            start=self.grace(t,bbox)
+            if start is None:
+                reason=('Appearance stayed below threshold beyond the short-occlusion grace; human reselection required'
+                        if self.grace_start is not None else 'Appearance confidence dropped; human reselection required')
+                return self.lose(t,reason)
+            self.grace_start=start;self.candidate=tuple(float(v) for v in bbox)
+            self.status='temporary_occlusion';self.confidence=0.0
+            self.reason='Brief visual effect/overlay: appearance below threshold with continuous position; analysis paused, not confirmed as WONY'
+            return self.record(t)
+        self.grace_start=None;self.candidate=None
         self.bbox=tuple(float(v) for v in bbox);self.confidence=round(min(.6,.6*similarity),3)
         self.status='low_confidence' if self.confidence<.45 else 'tracking'
         self.reason='Appearance confidence marginal; pose paused' if self.status=='low_confidence' else None
+        self.history.append((t,self.bbox))
         return self.record(t)
 
 

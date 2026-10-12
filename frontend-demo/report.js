@@ -7,9 +7,9 @@ const video = $('overlay');
 const timeline = $('timeline');
 const roleLabels = {batter:'타자',defense:'수비',catcher:'포수',pitcher:'투수',baserunning:'주루',unknown:'역할 미확인'};
 // 내부 상태 코드를 초보자용 문장으로 바꾼다. 값 자체는 바꾸지 않고 표시만 바꾼다.
-const friendlyTerms={insufficient_data:'분석할 장면이 부족합니다',insufficient_pose:'분석할 장면이 부족합니다',input_validation_only:'입력 확인만 완료 · 능력 평가 전',confirmed:'처음 지정됨',tracking:'추적 중',low_confidence:'추적이 불확실해 분석에서 제외',tracking_lost:'WONY를 잠시 찾지 못했습니다',reidentification_required:'WONY를 다시 선택해주세요',unknown:'역할을 확인하지 못했습니다',completed:'분석 완료',not_supported:'현재 미지원'};
+const friendlyTerms={insufficient_data:'분석할 장면이 부족합니다',insufficient_pose:'분석할 장면이 부족합니다',input_validation_only:'입력 확인만 완료 · 능력 평가 전',confirmed:'처음 지정됨',tracking:'추적 중',low_confidence:'추적이 불확실해 분석에서 제외',temporary_occlusion:'효과에 잠시 가려짐 (분석 제외)',tracking_lost:'WONY를 잠시 찾지 못했습니다',reidentification_required:'WONY를 다시 선택해주세요',unknown:'역할을 확인하지 못했습니다',completed:'분석 완료',not_supported:'현재 미지원'};
 const friendly=code=>friendlyTerms[code]||code;
-const eventLabels = {swing:'스윙',receive:'포구',fielding:'수비 동작',release:'투구',run:'주루',start:'출발',sprint:'주루'};
+const eventLabels = {swing:'스윙',receive:'손 움직임 (포구 미확인)',fielding:'수비 동작',release:'투구',run:'주루',start:'출발',sprint:'주루'};
 const eventLabel = type => eventLabels[type]||'플레이';
 const stageLabels = {pose_reference:'자세 참고 장면',stance:'스탠스',load:'로드',front_foot_landing:'앞발 착지 참고',swing_start:'스윙 시작 후보',estimated_impact:'임팩트 참고',follow_through:'팔로스루 후보',setup:'준비',leg_lift:'레그 리프트 후보',stride:'스트라이드 후보',arm_cocking:'암 코킹 후보',release:'릴리스 후보',ready:'준비',action:'동작 후보',finish:'마무리'};
 const angleLabels = {shoulder_angle:'어깨 각도',elbow_angle:'팔꿈치 각도',hip_rotation:'골반선 변화',knee_flexion:'무릎 굽힘',trunk_lean:'상체 기울기'};
@@ -173,6 +173,8 @@ const sync=()=>{if(result&&!video.paused)updateFrame(Math.min(Math.floor(video.c
 
 const metricLabels={stance_type:'기본 스탠스',swing_type:'스윙 궤적',head_stability:'머리 고정',weight_transfer:'체중 이동 추정',balance:'밸런스',stance_width:'스탠스 폭',knee_flexion:'무릎 굽힘',trunk_lean:'상체 기울기',torso_lean:'상체 기울기',head_stability_score:'머리 안정성 대리 지표',weight_transfer_score:'골반 이동 대리 지표',hip_rotation:'골반선 변화 (2D)',shoulder_rotation:'어깨선 변화 (2D)',elbow_angle:'팔꿈치 각도',wrist_angle:'손목 각도',leg_kick:'레그킥 후보',follow_through:'팔로스루',contact:'컨택',impact_time:'임팩트 후보 시점',release_time:'릴리스 후보 시점',first_step_time:'첫 이동 후보 시점',reaction_time:'반응 시간',transition_time:'송구 전환 후보 시간',running_posture:'주루 자세'};
 Object.assign(metricLabels,{hand_speed_proxy:'몸통 대비 손 이동 속도',hand_acceleration_proxy:'손 이동 가속도 대리 지표',hip_shoulder_separation_proxy:'어깨·골반선 분리각 (2D)',trunk_orientation_speed_proxy:'몸통축 방향 변화 속도 (2D)',arm_path_proxy:'손목 경로 대리 지표',arm_speed_proxy:'손목 이동 속도 대리 지표',arm_elevation_proxy:'지정 팔 고도각 (2D)',elbow_mechanics_proxy:'팔꿈치 각도 관찰',shoulder_mechanics_proxy:'어깨 각도 관찰',running_speed_proxy:'영상 내 주루 이동 속도',cadence_proxy:'발 교대 주기 기반 cadence',range_proxy:'영상 내 중심 이동 범위',body_control_proxy:'영상 내 골반 이동량',footwork_path_proxy:'발목 경로 합',balance_variability_proxy:'골반·발 중심 오프셋 변동',stride_width_proxy:'영상 내 발목 간격',hand_path_consistency_proxy:'복수 후보 손 경로 편차'});
+// 포수: mitt_* 값은 글러브 쪽 손목 관찰이다. 글러브 추적처럼 보이지 않게 이름을 붙인다.
+Object.assign(metricLabels,{mitt_start_position:'글러브 쪽 손목 위치 (글러브 추적 아님)',mitt_movement:'글러브 쪽 손목 이동 (글러브 추적 아님)',glove_tracking:'글러브 추적',low_blocking_posture:'블로킹 자세',lateral_blocking:'좌우 골반 이동',center_height:'골반 높이 (발목 기준)',trunk_height:'어깨 높이 (발목 기준)',ready_stance:'준비 자세 발 간격',standing_up:'일어서는 골반 이동',receiving_posture:'포구 자세',framing:'프레이밍',receive_success:'포구 성공',blocking_success:'블로킹 성공',throwing_preparation:'송구 준비',throw_start_time:'송구 시작 시점',second_base_preparation:'2루 송구 준비',upper_body_rotation:'상체 회전 범위 (2D)'});
 const labelFor=key=>metricLabels[key]||key.replaceAll('_',' ');
 const categoryByRole={batter:'batting',defense:'defense',catcher:'catching',pitcher:'pitching',baserunning:'baserunning'};
 let bundle=null,activeRole='all',selectedEntry=null,selectedPlay=null;
@@ -259,7 +261,7 @@ loadReport();
 $('original-video').addEventListener('play',()=>{$('play').textContent='❚❚ 일시 정지';});$('original-video').addEventListener('pause',()=>{$('play').textContent='▶ 재생';});
 
 const toolStatus={measured:'측정값',estimated:'참고 관찰',insufficient_data:'분석할 장면이 부족합니다',not_supported:'현재 미지원'};
-const scoutLabels={contact:'CONTACT',power:'POWER · 동작 대리 지표',speed:'SPEED · 주루 대리 지표',fielding:'FIELDING',arm:'ARM · 자세 대리 지표',reaction:'REACTION',balance:'BALANCE',footwork:'FOOTWORK',baserunning:'BASERUNNING',catching:'CATCHING',timing:'TIMING',swing_consistency:'SWING CONSISTENCY'};
+const scoutLabels={receiving:'RECEIVING · 포구 준비 자세',blocking:'BLOCKING',framing:'FRAMING',glove_movement:'GLOVE-SIDE HAND · 손목 관찰 (글러브 추적 아님)',throwing_transition:'THROWING TRANSITION',contact:'CONTACT',power:'POWER · 동작 대리 지표',speed:'SPEED · 주루 대리 지표',fielding:'FIELDING',arm:'ARM · 자세 대리 지표',reaction:'REACTION',balance:'BALANCE',footwork:'FOOTWORK',baserunning:'BASERUNNING',catching:'CATCHING',timing:'TIMING',swing_consistency:'SWING CONSISTENCY'};
 function toolCard(name,item){
  const card=node('article',null,'tool-card');card.dataset.tool=name;
  card.append(node('h3',scoutLabels[name]||labelFor(name)),node('span',toolStatus[item.status]||'데이터 부족','tool-state'),node('p',item.summary));
@@ -399,7 +401,7 @@ function renderCompareInfo(i){
  const gap=lastOriginalTime==null?0:lastOriginalTime-sampleTime;
  $('ci-time').textContent=`분석 장면 ${sampleTime.toFixed(2)}초${gap>0.005?` · 원본은 ${gap.toFixed(2)}초 뒤 (다음 분석 장면 전)`:''}`;
  const found=[],tracked=result.target_tracking?.frames?.[i];
- if(tracked)found.push(tracked.status==='tracking'||tracked.status==='confirmed'?'WONY 추적 중':tracked.status==='low_confidence'?'WONY 추적이 불확실해 이 장면은 분석하지 않았어요':'WONY를 놓친 뒤라 이 장면은 분석하지 않았어요');
+ if(tracked)found.push(tracked.status==='tracking'||tracked.status==='confirmed'?'WONY 추적 중':tracked.status==='low_confidence'?'WONY 추적이 불확실해 이 장면은 분석하지 않았어요':tracked.status==='temporary_occlusion'?'효과·표시에 WONY가 잠시 가려져 이 장면은 분석하지 않았어요 (같은 위치에서 추적 유지)':'WONY를 놓친 뒤라 이 장면은 분석하지 않았어요');
  const sample=(result.pose||[]).find(p=>frame&&Math.abs(p.time_seconds-frame.timestamp)<.051);
  const visible=index=>(sample?.landmarks?.[index]?.visibility??0)>=.6;
  if(frame?.joints&&Object.keys(frame.joints).length)found.push('전신 자세 품질 통과 · 참고용 3D 표시');

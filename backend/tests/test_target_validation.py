@@ -66,7 +66,10 @@ def test_changed_appearance_loses_target(image):
     tracker=ManualTargetTracker(selection(),lambda:FakeTracker());tracker.update(image,0)
     other=image.copy();other[10:70,20:50]=(0,0,240)
     r=tracker.update(other,.1)
-    assert r['status']=='tracking_lost' and 'Appearance' in r['reason']
+    # A brief dip is held (not confirmed, no pose); a persistent change still ends tracking.
+    assert r['status']=='temporary_occlusion' and r['bbox'] is None and not r['analysis_allowed']
+    for t in (.2,.3,.4,.5):r=tracker.update(other,t)
+    assert r['status']=='tracking_lost' and 'Appearance' in r['reason'] and r['lost_at']==.5
 
 
 def test_successful_update_is_not_identity_probability(image):
