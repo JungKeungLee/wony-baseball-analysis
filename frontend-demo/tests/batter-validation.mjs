@@ -1,0 +1,31 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+const base=process.env.WONY_BASE_URL||'http://127.0.0.1:8000';
+const file=process.env.WONY_REAL_BATTER_CLIP;
+if(!file)throw new Error('WONY_REAL_BATTER_CLIP must be the actual wony-batter-002.mp4; no synthetic substitute.');
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:1100}}),errors=[];page.setDefaultTimeout(180000);page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/demo/validation/');await page.locator('#validation-file').setInputFiles(file);
+ await page.waitForFunction(()=>document.querySelector('#selection-video').readyState>=2);
+ await page.locator('#capture-selection').click();const canvas=page.locator('#selection-canvas');await canvas.scrollIntoViewIfNeeded();const r=await canvas.boundingBox();
+ await page.mouse.move(r.x+460/1920*r.width,r.y+160/1080*r.height);await page.mouse.down();await page.mouse.move(r.x+790/1920*r.width,r.y+960/1080*r.height,{steps:10});await page.mouse.up();
+ assert.equal(await page.locator('#validate-target').isDisabled(),true);
+ await page.locator('#selection-viewpoint').selectOption('third_person');await page.locator('#role-hint').selectOption('batter');await page.locator('#confirm-target').check();
+ await page.screenshot({path:'/tmp/wony-batter-002/manual-selection.png',fullPage:true});await page.locator('#validate-target').click();await page.waitForURL('**/demo/validation/report/*');
+ await page.waitForFunction(()=>document.querySelector('#report-meta').textContent.length>0);
+ const id=page.url().split('/').at(-1),data=await (await page.request.get(base+'/api/validation/'+id+'/analysis')).json();
+ assert.equal(data.player_id,'wony');assert.equal(data.synthetic_demo,false);assert.equal(data.role,'batter');assert.equal(data.role_input.source,'user_provided');assert.equal(data.automatic_role_estimate.value,'unknown');
+ assert.equal(data.status,'insufficient_pose');assert.equal(data.target_tracking.automatic_reidentification,false);assert.equal(data.target_tracking.lost_at,null);
+ assert.equal(data.validation_summary.usable_general_pose_frames,0);assert.equal(data.validation_summary.estimated_3d_frames,0);
+ assert.equal(data.events.length,0);assert.equal(data.ball_speed,null);assert.equal(data.batted_ball_speed,null);
+ assert.ok(data.visualization.pose3d.frames.every(f=>Object.keys(f.joints).length===0));
+ assert.ok(Object.values(data.scouting_report.player_tools).every(t=>t.score===null&&t.status==='insufficient_data'));
+ assert.equal(data.scene_context.sbo_pitcher.value,'unknown');assert.equal(data.scene_context.header_observations.filter(o=>o.detected).length,0);
+ assert.match(await page.locator('#source-badge').textContent(),/실제 영상/);assert.doesNotMatch(await page.locator('#source-badge').textContent(),/DEMO/);
+ await page.locator('#play-list button').first().click();await page.waitForFunction(()=>document.querySelector('#overlay').readyState>=2);await page.locator('#timeline').fill('85');await page.locator('#timeline').dispatchEvent('input');await page.waitForFunction(()=>{const v=document.querySelector('#overlay');return !v.seeking&&v.readyState>=2&&Math.abs(v.currentTime-8.5)<.2;});
+ await page.screenshot({path:'/tmp/wony-batter-002/real-2d-report.png',fullPage:true});
+ await page.locator('[data-mode="pose"]').click();await page.screenshot({path:'/tmp/wony-batter-002/withheld-3d-report.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);
+ console.log(JSON.stringify({passed:true,id,role_source:data.role_input,automatic_role:data.automatic_role_estimate.value,summary:data.validation_summary,scope:'Actual WONY batter clip, manual target/role input, loss guard, real 2D, withheld 3D/ratings, pitcher template negative control, mobile'}));
+}finally{await browser.close();}

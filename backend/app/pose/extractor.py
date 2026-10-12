@@ -2,10 +2,10 @@ import cv2
 import mediapipe as mp
 
 
-def extract_pose(frames):
+def extract_pose(frames, *, model_complexity=1):
     samples = []
     with mp.solutions.pose.Pose(
-        static_image_mode=False, model_complexity=1,
+        static_image_mode=False, model_complexity=model_complexity,
         min_detection_confidence=0.5, min_tracking_confidence=0.5,
     ) as detector:
         for timestamp, frame in frames:

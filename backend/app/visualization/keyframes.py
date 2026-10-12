@@ -52,14 +52,18 @@ def select_keyframes(samples_by_frame, result):
     samples = list(samples_by_frame.values())
     rows = pose_rows(samples, hand, profile='pitcher' if role == 'pitcher' else 'general')
     stages = PHASES.get(role, ['ready', 'action', 'finish'])
+    phases_allowed=result.get('phase_evidence_gate',{}).get('allow_phase_candidates',True)
+    if not phases_allowed:
+        stages=['pose_reference'];rows=pose_rows(samples,hand)
     selected = {stage: None for stage in stages}
     methods = {}
     reference = set()
+    if not phases_allowed:reference.add('pose_reference')
     if rows:
         selected[stages[0]] = rows[0]
         methods[stages[0]] = 'First usable pose; phase is an unverified candidate'
     peak = max_motion(rows)
-    if peak is not None and role in PHASES:
+    if phases_allowed and peak is not None and role in PHASES:
         before = rows[:peak+1]
         if role == 'batter':
             load = int(np.argmax([r['knee'] for r in before]))

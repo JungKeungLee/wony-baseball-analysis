@@ -13,6 +13,13 @@ from app.api.modes import router as modes_router
 app.include_router(modes_router, prefix='/api')
 from app.api.reports import router as reports_router
 app.include_router(reports_router, prefix='/api')
+from app.api.validation import router as validation_router
+app.include_router(validation_router,prefix='/api')
+
+
+@app.get('/demo/validation/report/{analysis_id}',include_in_schema=False)
+def validation_report(analysis_id:UUID):
+    return FileResponse(Path(__file__).resolve().parents[2]/'frontend-demo'/'analysis.html')
 
 @app.get('/demo/analysis/{analysis_id}', include_in_schema=False)
 def unified_report(analysis_id: UUID):

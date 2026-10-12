@@ -134,7 +134,7 @@ function showResult(data){
   result.visualization ||= {frame_count:0,keyframes:[],pose3d:{frames:[],edges:[]}};
   const vis=result.visualization;
   $('status').textContent=`${vis.frame_count} frames · ${result.sample_fps} fps · ${result.status}`;
-  $('json-link').hidden=false;$('json-link').href=`/api/analysis/${result.id}`;
+  $('json-link').hidden=false;$('json-link').href=bundle?.kind==='validation'?`/api/validation/${result.id}/analysis`:`/api/analysis/${result.id}`;
   video.src=vis.overlay_video_url||'';$('video-placeholder').hidden=!!vis.overlay_video_url;
   timeline.max=String(Math.max(vis.frame_count-1,0));timeline.disabled=!vis.frame_count;
   $('play').disabled=!vis.overlay_video_url;
@@ -194,6 +194,7 @@ $('original-video').addEventListener('timeupdate',()=>{if(!selectedEntry)return;
 document.querySelectorAll('[data-report-role]').forEach(b=>b.addEventListener('click',()=>selectRole(b.dataset.reportRole)));
 document.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
 async function renderGrowth(){
+ if(bundle.kind==='validation'){$('growth-notice').textContent='실제 영상 기술 검증 결과입니다. 정식 선수 성장 이력에 등록하지 않습니다.';$('growth-report').replaceChildren();return;}
  const rows=[],withheld=new Set(),histories=new Map();
  for(const entry of bundle.entries){const r=entry.analysis;if(!r.player_id)continue;
   try{const url=`/api/players/${encodeURIComponent(r.player_id)}/history?source=${r.synthetic_demo?'demo':'real'}`;
@@ -212,14 +213,17 @@ async function renderGrowth(){
  else{const table=node('table',null,'growth-table'),header=node('tr');['날짜','역할','항목','이번 관측값','이전 대비'].forEach(x=>header.append(node('th',x)));table.append(header);rows.forEach(values=>{const tr=node('tr');values.forEach(v=>tr.append(node('td',v)));table.append(tr);});const wrap=node('div',null,'growth-scroll');wrap.append(table);target.append(wrap);}
  if(withheld.size){const detail=node('details',null,'tech');detail.append(node('summary','비교를 보류한 기록 · 상세 조건'));for(const reason of withheld)detail.append(node('p',reason));target.append(detail);}
 }
-async function loadReport(){try{const id=location.pathname.split('/').filter(Boolean).at(-1);const response=await fetch(`/api/reports/${encodeURIComponent(id)}`);if(!response.ok)throw new Error('분석 리포트를 찾을 수 없습니다.');bundle=await response.json();const roles=new Set(bundle.entries.map(e=>e.analysis.role));document.querySelectorAll('[data-report-role]').forEach(b=>{if(b.dataset.reportRole==='all')return;b.disabled=!roles.has(b.dataset.reportRole);b.title=b.disabled?'분석 기록 없음':'';});
+async function loadReport(){try{const id=location.pathname.split('/').filter(Boolean).at(-1);const response=await fetch(`${location.pathname.startsWith('/demo/validation/report/')?'/api/validation/':'/api/reports/'}${encodeURIComponent(id)}`);if(!response.ok)throw new Error('분석 리포트를 찾을 수 없습니다.');bundle=await response.json();const roles=new Set(bundle.entries.map(e=>e.analysis.role));document.querySelectorAll('[data-report-role]').forEach(b=>{if(b.dataset.reportRole==='all')return;b.disabled=!roles.has(b.dataset.reportRole);b.title=b.disabled?'분석 기록 없음':'';});
  const summaries=bundle.entries.map(e=>e.analysis.scouting_report?.overall_summary||'스카우팅 요약 미보관');const roleWords={batting:'타격',defense:'수비',catching:'포수',pitching:'투수',baserunning:'주루'};$('report-summary').textContent=[...new Set(summaries)].join(' ').replace(/\b(batting|defense|catching|pitching|baserunning)\b/g,w=>roleWords[w]);
  const segments=bundle.segments?.map(s=>`${hhmmss(s.start)} ~ ${hhmmss(s.end??s.last_signal??s.start)}`).join(', ');const coverage=bundle.entries.reduce((sum,e)=>sum+Math.max(0,(e.end||e.start)-e.start),0);
  $('report-meta').textContent=`분석 날짜 ${bundle.analysis_date||'미보관'} · ${segments?'야구 후보 구간 '+segments:'단일 분석 클립'} · 실제 처리 ${coverage.toFixed(1)}초 / ${bundle.entries.length}클립 · 역할 ${[...roles].map(r=>roleLabels[r]||r).join(' · ')}`;
  $('source-badge').hidden=!bundle.synthetic_demo;$('source-badge').textContent='예시 데이터 (DEMO)';$('source-badge').title='합성 데이터 · 실제 선수 평가 아님';
+ if(bundle.kind==='validation'){document.querySelector('h1').firstChild.textContent='WONY 실영상 기술 검증 ';$('sum-plays').previousElementSibling.textContent='검증 클립';$('sum-time').previousElementSibling.textContent='영상 검증 시간';$('source-badge').hidden=false;$('source-badge').textContent='실제 영상 검증 · 실험적';$('source-badge').title='사용자 확인 대상 ROI의 기술 검증. 경기 능력 평가 완료 아님';const v=bundle.entries[0].analysis.validation_summary,t=bundle.entries[0].analysis.target_tracking;const notice=node('p',`수동 대상 ${t.identity_source} · 추적 ${t.status}${t.lost_at!=null?' / 손실 '+t.lost_at.toFixed(3)+'초':''} · pose 검출 ${v.pose_detected_frames}/${v.tracking_allowed_frames} · 전신 품질 통과 ${v.usable_general_pose_frames} · 참고 3D ${v.estimated_3d_frames}프레임. 검출 성공이 자세 정확도 검증을 의미하지 않습니다.`,'hint');$('overview').prepend(notice);
+ const hud=bundle.entries[0].analysis.hud_observations||[];if(hud.length){const detail=node('details',null,'tech');detail.append(node('summary','HUD OCR 상세 · 미확정 숫자 후보'));detail.append(node('p','OCR 후보는 경기 구속/타격 속도 측정값이 아닙니다. 검토 전 accepted value는 null이며 투구 이벤트와 연결하지 않습니다.'));for(const h of hud){const p=node('p',`${h.timestamp.toFixed(3)}초 · ${h.metric} · OCR 후보 ${h.ocr_candidate??'없음'} · OCR confidence ${h.ocr_confidence??0} · 검토 필요`);if(h.evidence_reference){const a=node('a','근거 crop');a.href=h.evidence_reference;a.target='_blank';p.append(' ',a);}detail.append(p);}$('report-details').append(detail);}}
+
  const playCounts={};for(const e of bundle.entries){const n=plays(e).length||1;playCounts[e.analysis.role]=(playCounts[e.analysis.role]||0)+n;}
  const baseballSeconds=bundle.segments?.length?bundle.segments.reduce((sum,s)=>sum+Math.max(0,s.duration??((s.end??s.last_signal??s.start)-s.start)),0):coverage;
- $('sum-date').textContent=bundle.analysis_date||'—';$('sum-time').textContent=duration(baseballSeconds);$('sum-plays').textContent=`${Object.values(playCounts).reduce((a,b)=>a+b,0)}개`;
+ $('sum-date').textContent=bundle.analysis_date||'—';$('sum-time').textContent=duration(baseballSeconds);$('sum-plays').textContent=bundle.kind==='validation'?`${bundle.entries.length}개 · 플레이 미확정`:`${Object.values(playCounts).reduce((a,b)=>a+b,0)}개`;
  $('sum-roles').replaceChildren(...Object.entries(playCounts).map(([role,n])=>{const c=node('span',roleLabels[role]||role,'role-count');c.append(node('b',String(n)));return c;}));$('status').textContent='공식 스카우팅 점수 아님 · 낮은 confidence는 판정 보류';
  feedback('report-strengths',bundle.entries.flatMap(e=>e.analysis.scouting_report?.strengths||e.analysis.strengths||[]));feedback('report-development',bundle.entries.flatMap(e=>e.analysis.scouting_report?.development_areas||e.analysis.weaknesses||[]));renderTools();selectRole('all');renderGrowth();
  }catch(error){$('report-error').textContent=error.message;}}
@@ -227,7 +231,7 @@ loadReport();
 
 $('original-video').addEventListener('play',()=>{$('play').textContent='❚❚ 일시 정지';});$('original-video').addEventListener('pause',()=>{$('play').textContent='▶ 재생';});
 
-const toolStatus={measured:'측정값',estimated:'참고 관찰',insufficient_data:'데이터 부족',not_supported:'현재 미지원'};
+const toolStatus={measured:'측정값',estimated:'참고 관찰',insufficient_data:'관찰 데이터 부족',not_supported:'현재 미지원'};
 const scoutLabels={contact:'CONTACT',power:'POWER · 동작 대리 지표',speed:'SPEED · 주루 대리 지표',fielding:'FIELDING',arm:'ARM · 자세 대리 지표',reaction:'REACTION',balance:'BALANCE',footwork:'FOOTWORK',baserunning:'BASERUNNING',catching:'CATCHING',timing:'TIMING',swing_consistency:'SWING CONSISTENCY'};
 function toolCard(name,item){
  const card=node('article',null,'tool-card');card.dataset.tool=name;

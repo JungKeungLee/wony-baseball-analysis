@@ -10,6 +10,10 @@ WONY PHONE과 분리된 Python/FastAPI 야구 영상 분석 MVP입니다. 타자
 
 통합 리포트 첫 화면에 CONTACT / POWER / SPEED / FIELDING / ARM을 제공합니다. 손 경로·속도/가속도·2D 선 분리각·골반/발목 경로·주루 주기 등 실제 좌표 계산을 연결하며 모든 능력 점수/등급은 null입니다. 실제 컨택·구속·타구 속도·물리적 주루 속도는 미지원입니다. [구현 전 GAP](docs/SCOUTING_GAP.md), [계산식/API/성장 호환성/검증](docs/SCOUTING_TOOLS.md)을 참고하세요. 같은 선수의 비교에는 capture_context(camera angle/VR/quality 등)를 지정해야 하며, 조건·관측 범위가 다르면 delta=null입니다.
 
+## WONY 실제 영상 검증 (실험적)
+
+`/demo/validation/`에서 수동 WONY ROI 확인 후 native crop pose/CSRT 추적을 시험합니다. 실제 20초 클립에서 tracking/pose/estimated3D 연결을 확인했지만 전신 품질·역할·5툴 평가를 보류했습니다. OCR 후보는 검토 전 value=null입니다. [PHASE 2 실제 결과·한계·API](docs/WONY_PHASE2_VALIDATION.md)를 확인하세요. 일반 `/api/analyze`·LIVE/VOD에는 대상 잠금을 전면 적용하지 않았습니다.
+
 ## 설치와 실행
 
 Python 3.12와 PATH에 등록된 ffmpeg가 필요합니다. Linux에서는 시스템 패키지 관리자로 ffmpeg를 설치하세요. MediaPipe 0.10.21의 번들 Pose 모델을 사용하며 별도 키나 모델 다운로드는 필요하지 않습니다.
@@ -113,7 +117,7 @@ curl http://localhost:8000/api/players/PLAYER-001/scouting-report
 
 선수 기록은 기본 `source=real`이며 합성 기록은 `?source=demo`로 따로 조회합니다. 같은 역할·촬영 조건·방법·단위와 충분한 신뢰도가 있을 때만 자세 대리 지표의 이전 대비 차이를 계산합니다. 차이는 기량 향상의 증거가 아닙니다. `GET /api/demo/growth`의 62→71→77 예시는 **DEMO 임의 데이터**로 실제 기록에 저장하지 않습니다.
 
-현재 검증: 백엔드 pytest **172개 통과**, 기존 시각화 및 새 리포트 Chromium 브라우저 테스트 통과. 실제 야구/VR 영상 정확도와 자동 플레이 분리는 아직 검증하지 않았습니다. [Windows 실행 안내](docs/WINDOWS.md), [리포트 화면 캡처](docs/screenshots/scouting-report.png)를 참고하세요.
+현재 검증: 백엔드 pytest **290개 통과**, 통합 리포트·LIVE/VOD·PLAYER TOOLS와 실제 WONY 검증 화면의 Chromium 브라우저 테스트 통과. 실제 WONY SBO VR 클립에서 수동 대상 지정, 추적 상태, 제한적 pose/추정 3D, 투수 문맥과 HUD 후보를 검증했지만 전체 정확도를 인증한 것은 아닙니다. [Windows 실행 안내](docs/WINDOWS.md), [최종 인수인계](docs/HANDOFF.md)를 참고하세요.
 
 
 ## 긴 방송 분석
@@ -128,3 +132,9 @@ curl http://localhost:8000/api/players/PLAYER-001/scouting-report
 `/demo/live/`는 HTTP(S) 스트림 또는 파일 리플레이를 저비용 감시하고 반복 다중 신호 확인/종료 유예를 적용합니다. `/demo/broadcast/`는 정확 구간, 대략 구간+버퍼, 중심 시점±탐색 폭, 전체 자동 탐색을 지원합니다. 둘 다 같은 detector와 `segments/execution.py`를 통해 기존 다섯 역할/2D/3D/events/scouting 엔진을 재사용합니다.
 
 API: `POST /api/live`, `GET /api/live/{id}`, `POST /api/live/{id}/stop`, `PATCH /api/live/{id}/role`; `POST /api/vod`와 기존 broadcast 조회/수정 API. VOD는 기존 업로드 또는 직접 MP4/종료 HLS URL을 지원합니다. **단일 색상/자세 신호로는 LIVE 분석이 활성화되지 않습니다.** 반복 다중근거 확인 후 역할을 자동 추정하고 실패할 때만 사람의 선택을 요청합니다. [설정·요청 예시·파일 목록·검증 한계](docs/LIVE_VOD.md)를 참고하세요.
+
+후속 입력 품질 개선: [WONY_PHASE2_ENGINE_IMPROVEMENTS.md](docs/WONY_PHASE2_ENGINE_IMPROVEMENTS.md). 현재 테스트 239개 통과. ROI margin·추적 상태·SBO context·HUD voting·3D/투구 단계 품질 조건을 추가했습니다. `pitcher` 추정은 실제 릴리스 검증과 분리하고, PLAYER TOOLS 점수는 보류합니다. 실제 검증 입력 한계는 120초/128MiB입니다.
+
+실제 타격 검증: [WONY_BATTER_002_VALIDATION.md](docs/WONY_BATTER_002_VALIDATION.md). 자동 역할 unknown, 전신 usable 0/321, 점수와 3D를 보류했습니다. 수동 검토 범위와 보이는 상체 2D 입력은 별도 validation 필드로 제공합니다. 현재 테스트 255개 통과입니다.
+
+배트/효과 후속 검증: [WONY_BAT_SEQUENCE_VALIDATION.md](docs/WONY_BAT_SEQUENCE_VALIDATION.md). 색상 후보와 수동 seed 기반 배트 후보를 분리하고 detection + 단기 optical flow + temporal association을 실험했습니다. 같은 색의 게임 효과로 전환될 위험이 남아 실제 검토 완료 swing path는 아직 0이며, 실제 bat speed/CONTACT/POWER 점수는 생성하지 않습니다. 현재 290개 테스트 통과입니다.

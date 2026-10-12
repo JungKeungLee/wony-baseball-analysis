@@ -8,7 +8,15 @@ def classify_role(samples, context=None):
     rows=pose_rows(samples);context=context or {};scores=dict.fromkeys(ROLES,0.0)
     result={'value':'unknown','estimated':True,'confidence':0.0,'confidence_grade':'low',
             'method':'temporal_pose_movement_context_v1','reason':'Insufficient or ambiguous temporal evidence'}
+    sbo=context.get('sbo_pitcher',{})
+    supported=(sbo.get('value')=='pitcher' and .7<=sbo.get('confidence',0)<=1
+        and set(sbo.get('evidence_families',[]))>={'scene','pose_motion'})
+    def sbo_result():
+        return dict(result,value='pitcher',confidence=min(sbo['confidence'],.8),
+            confidence_grade='medium',method=sbo['method'],reason=None,context_evidence=sbo,
+            candidates=[{'role':r,'confidence':min(sbo['confidence'],.8) if r=='pitcher' else 0,'estimated':True} for r in ROLES])
     if len(rows)<5 or rows[-1]['t']-rows[0]['t']<.4:
+        if supported:return sbo_result()
         return dict(result,candidates=[{'role':k,'confidence':v} for k,v in scores.items()])
     torso=np.median([r['torso'] for r in rows]);xy=np.array([r['xy'] for r in rows])
     knee=np.median([r['knee'] for r in rows]);hips=np.array([r['hips'] for r in rows])
@@ -35,4 +43,8 @@ def classify_role(samples, context=None):
     if confidence>=.7 and ordered[0][1]-ordered[1][1]>=.15:
         result.update(value=ordered[0][0],confidence=round(confidence,3),confidence_grade='high' if confidence>=.75 else 'medium',reason=None)
     result['candidates']=[{'role':k,'confidence':round(v,3),'estimated':True} for k,v in ordered]
+    if supported:
+        if ordered[0][1]>=.7 and ordered[0][0]!='pitcher':
+            result.update(value='unknown',confidence=0.0,confidence_grade='low',reason='SBO context conflicts with generic temporal role evidence')
+        else:return sbo_result()
     return result

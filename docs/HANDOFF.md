@@ -1,8 +1,8 @@
 # wony-baseball-analysis — 최신 인수인계
 
-이 문서는 현재 로컬 소스 기준입니다. 이전 버전별 설명을 합쳐 **통합 리포트 UI / LIVE·VOD URL / 자동 역할 / 172개 테스트** 기준으로 정리했습니다. FastAPI 버전 표기는 0.4.0, 신규 단일 분석 응답 schema_version은 0.4.0입니다.
+이 문서는 2026-10-13 최종 Codex 소스 기준입니다. 이전 버전별 설명을 합쳐 **통합 리포트 UI / LIVE·VOD URL / WONY 실제 검증 / 290개 테스트** 기준으로 정리했습니다. FastAPI 버전 표기는 0.4.0, 신규 단일 분석 응답 schema_version은 0.4.0입니다.
 
-WONY PHONE과 분리된 독립 Python 야구 영상 분석 MVP입니다. 현재 작업 목표는 **Claude Code에서 Windows 로컬 실행과 확인**입니다. WONY PHONE 통합, 새 기능 추가, commit/push는 승인되지 않았습니다.
+WONY PHONE과 분리된 독립 Python 야구 영상 분석 MVP입니다. 다음 작업 목표는 **Claude Code에서 Windows 로컬 실행과 UI·UX 확인**입니다. WONY PHONE은 아직 연동하지 않았습니다.
 
 **소스 전달:** LIVE/VOD·통합 UI·전달 문서를 함께 버전 관리합니다. 원격 저장소를 사용할 때는 최신 main을 받고 `git log -1`과 `docs/CLAUDE_HANDOFF.md` 존재를 확인하세요. ZIP은 생성 시점이 다를 수 있으므로 최신이라고 가정하지 마세요. 로컬 변경은 보존하고 `.venv`, `node_modules`, `data`, 캐시는 전달 소스에서 제외하세요.
 
@@ -58,7 +58,7 @@ wony-baseball-analysis/
       visualization/              # 2D overlay, 3D 상대 좌표, keyframe, DEMO
       models/{result,storage}.py   # Pydantic 응답 계약, 원자적 JSON 저장
     requirements.txt              # 고정 Python 의존성
-    tests/                        # 9개 test 파일, 현재 172개 테스트
+    tests/                        # 역할·시각화·방송·대상·품질 검증, 현재 290개 테스트
   frontend-demo/
     index.html / dashboard.js     # 메인 대시보드, 짧은 영상 분석 시작
     broadcast/index.html          # 한 화면의 LIVE/VOD 탭
@@ -268,9 +268,9 @@ curl.exe -X POST http://127.0.0.1:8000/api/analyze -F "video=@C:\clips\bat.mp4" 
 
 LIVE1개/VOD1개, 정밀 엔진 lock 공유. 외부 큐/인증/사용자 격리/DB 인덱스/자동 재개/보관기한은 미구현입니다. VOD/LIVE URL은 HLS 참조/redirect별 public IP 검증과 연결 IP 고정/TLS SNI를 적용합니다. 인증/사용자 격리와 배포 egress 제한은 별도이므로 공개 서비스 준비 완료를 의미하지 않습니다.
 
-## 12. 테스트 — 현재 172개
+## 12. 테스트 — 현재 290개
 
-최신 Linux/Python3.12 검증: **pytest172개 통과, 의존성 deprecation 경고3개**. 기존129개에 5툴/촬영 조건/근거/성장 비교43개를 추가했습니다. 생성 HTTP MP4/HLS에서 실제 ffmpeg와 API→리포트→자산→구간 수정까지 검증하며, 역할/모델 출력 fixture는 합성입니다. 실제 SOOP/VR 정확도와 Windows 실행은 아직 미검증입니다.
+최신 Linux/Python3.12 검증: **pytest 290개 통과, 의존성 deprecation 경고3개**. WONY 관련 집중 묶음은118개가 통과했습니다. 생성 HTTP MP4/HLS에서 실제 ffmpeg와 API→리포트→자산→구간 수정까지 검증하며, 역할/모델 출력 fixture는 합성입니다. 실제 WONY SBO 영상은 제한적으로 검증했지만 전체 SOOP/VR 정확도와 Windows 실행은 미검증입니다.
 
 프로젝트 루트, PowerShell:
 
@@ -312,7 +312,7 @@ node tests/tools.mjs
 ## 14. Claude Code가 유지해야 할 경계
 
 1. WONY PHONE 저장소/통합 코드를 수정하지 않기. 현재 작업은 독립 엔진의 Windows 실행·확인.
-2. 미커밋/미추적 소스를 보존하기. reset/clean/checkout/clone으로 현재 구현을 지우지 않기. commit/push는 별도 승인 전 금지.
+2. 최신 `main`의 소스를 보존하기. reset/clean/checkout으로 현재 구현을 지우지 말고, 로컬 수정이 있으면 먼저 diff를 확인하기.
 3. 실행 문제를 해결하려고 requirements 핀/MediaPipe API/numpy/OpenCV 구성을 임의 업그레이드하지 않기. 원인과 재현을 확인하고 최소 수정 범위를 먼저 정리하기.
 4. analysis/shared, 역할 analyzer, models/result 계약, 기존 GET 호환과 플레이 timestamp를 런타임 편의를 위해 바꾸지 않기.
 5. LIVE/VOD 별도 분석 엔진을 만들지 않기. source/discovery만 분리하고 execution/process_frames 경로 공유.
@@ -341,3 +341,116 @@ node tests/tools.mjs
 통합 리포트 첫 화면은 PLAYER TOOLS → 강점 → 개선점 → 역할별 요약 → 성장 비교 → 플레이 근거 순서입니다. 각 카드의 confidence/estimated/raw proxy/method는 상세에 두며 근거 클릭은 기존 원본/2D/3D/keyframe 영역을 엽니다. 근거 scope=whole_clip과 candidate=true를 유지해 플레이 성공 판정으로 바꾸지 않습니다. API 조회는 과거 저장 결과를 고치지 않고 entries.scouting_extension으로 확장합니다.
 
 새 테스트43개는 실제 계산식, 부족 데이터, cadence 주기, 점수/구속 null, 역할 요약, 중복/서로 다른 선수/DEMO 집계 차단, 근거 연결, 촬영 조건·관측 범위 호환성, LIVE/VOD metadata 전달을 검증합니다. 비교 fixture에 촬영 조건을 추가했으며 기존 assertion은 유지했습니다. 실제 WONY/VR 영상 정확도·노이즈·원근 영향은 별도 검증 필요합니다.
+
+## 17. WONY 실제 영상 PHASE 2 검증
+
+[WONY_PHASE2_VALIDATION.md](WONY_PHASE2_VALIDATION.md)에 실제 20.045초 / 1920×1080 / 60fps 클립의 판정, ROI 민감도, 수정 파일, 재현 방법을 기록했습니다. 중앙 WONY는 사용자가 확인했습니다. 기본/여유 ROI 모두 201개 샘플에서 추적과 pose 검출이 가능했지만, 전신 품질은 각각 2개/4개만 통과했습니다. 자동 역할은 unknown이며 5툴 평가는 보류했습니다. estimated 3D는 일부 관절의 참고 시각화입니다.
+
+`/demo/validation/` → 수동 ROI·시점·대상 확인 → `/api/validation` → 기존 통합 viewer의 실험적 리포트 순서입니다. 일반 분석 기록과 선수 성장 이력에서 분리했습니다. LIVE/VOD 전체에 대상 잠금을 적용한 것은 아닙니다. `validation/target.py`는 CSRT 실패, 화면 전환, 경계 이탈, appearance 변화 후 tracking_lost를 유지하고 자동 재선택하지 않습니다. first_person/unknown 시점에서는 전신 pose를 호출하지 않습니다. 실제 가림이나 유사 아바타 교차는 이번 클립에 없어 미검증입니다.
+
+HUD의 원본/환산 속도는 게임 표시값입니다. OCR 오독이 발생해 value=null을 유지하고 ocr_candidate와 review_required를 제공합니다. source_time_mapping은 이번 MP4의 원본 PTS이며 이전 방송의 offset은 확인되지 않았습니다. 검사 영상·결과·crop은 Git에서 제외되는 data/validation에 저장합니다.
+
+초기 검증의 서버 테스트 195개 통과, 기존 의존성 경고 3개입니다. 기존 브라우저 4종과 실제 클립의 수동 선택·2D·3D 브라우저 검증을 통과했습니다. Windows 실행은 미검증입니다. 실제 영상 테스트는 WONY_REAL_CLIP을 설정하고 `node tests/target-validation.mjs`로 실행합니다. 이번 결과가 전체 VR 스카우팅 엔진의 정확도 검증을 뜻하지는 않습니다.
+
+후속 입력 품질 개선: [WONY_PHASE2_ENGINE_IMPROVEMENTS.md](WONY_PHASE2_ENGINE_IMPROVEMENTS.md). 현재 테스트 239개 통과. ROI margin·추적 상태·SBO context·HUD voting·3D/투구 단계 품질 조건을 추가했습니다. `pitcher` 추정은 실제 릴리스 검증과 분리하고, PLAYER TOOLS 점수는 보류합니다. 실제 검증 입력 한계는 120초/128MiB입니다.
+
+## 18. 실제 타격 클립 검증
+
+[WONY_BATTER_002_VALIDATION.md](WONY_BATTER_002_VALIDATION.md)를 읽으세요. 사용자가 WONY를 확인했습니다. 몸통 중심 identity ROI와 pose margin을 분리해 32초 클립에서 319/321 pose 검출, tracking loss 없음, 전신 usable 0/321을 확인했습니다. 자동 역할은 unknown이며 manual role_hint=batter와 혼동하지 마세요. 배트 오브젝트와 색상 효과의 의미는 별개입니다. bat/trail detector는 아직 없습니다.
+
+`POST /api/validation`의 optional form `batter_review` 또는 CLI `--batter-review`는 `{ "windows":[{"start":0.9,"end":2.3}] }` 형태의 **수동 검토 범위**를 받습니다. 자동 swing start/end나 contact event가 아닙니다. GET 결과의 batter_validation에 head relative displacement·visible right-hand path·projected elbow range를 low-confidence/estimated 입력으로 제공합니다. 이것을 실제 배트 경로, head 안정성 등급, 컨택·파워 능력으로 변환하지 마세요. 기존 player_tools/성장 이력에 자동 합산하지 않습니다.
+
+255개 backend 테스트 통과. 실제 브라우저 추가 검증은 WONY_REAL_BATTER_CLIP 설정 후 `node frontend-demo/tests/batter-validation.mjs`로 실행합니다. 3D는 이 영상에서 모든 joints={}이며 데이터 없는 전신을 만들지 않습니다. 투수용 arm raise/lower cue는 타격에도 발생했고 HUD 조건이 투수 오판을 막았습니다. 한 음성 사례로 template 일반화 검증 완료를 주장하지 마세요. WONY PHONE/메인 UI 구조는 유지했습니다.
+
+## 19. Bat object / SBO 색상 후보 검증
+
+[WONY_BAT_SEQUENCE_VALIDATION.md](WONY_BAT_SEQUENCE_VALIDATION.md)를 읽으세요. 추가 3개 파일은 실제 타격 장면이며 002/003은 동일 파일입니다. 목재형 배트의 수동 seed 5개에서 430프레임의 잠정 좌표가 나왔지만 완전한 swing 후보는 0개입니다. 손목이나 색상 효과로 끊긴 bat path를 채우지 마세요. `validate_bat_sequence.py`는 영상 SHA가 일치하는 confirmed third-person target report를 사용하는 opt-in CLI입니다. Target loss 시 중단하며 일반 선수 이력에 자동 저장하지 않습니다.
+
+후속 hybrid layer는 원본60fps에서 영상 검출, 짧은 optical flow, temporal association을 사용하고 tip/handle/orientation/path point/confidence/source를 프레임별로 남깁니다. 손목은 검출 후보 선택의 보조 조건이며 위치 대체나 보간에 쓰지 않습니다. 합성 fast-motion fixture는 통과했지만 실제 영상에서는 같은 색의 화면 효과로 전환될 위험이 남았습니다. 실제 `reviewed_object_track`은 false이고 검토 완료 start→path→end는 0건입니다.
+
+290개 테스트 통과. Projected type/consistency의 DEMO 테스트 통과는 실제 완성 근거가 아닙니다. Review flag나 camera 보정을 실제 검증 없이 설정하지 마세요. Bat trail 의미는 미확정이며 actual speed/contact score/하체 POWER는 null을 유지합니다. 이번 단계는 메인 UI나 WONY PHONE 통합 작업이 아닙니다.
+
+## 20. Codex 최종 상태와 Claude 시작 체크리스트
+
+### 커밋 직전 기준
+
+- 이번 전체 변경의 시작 기준은 `a62554f78b8df69a822ce8ac9bfc86b5ea21d022` (`feat: add evidence-based scouting tools and broadcast inputs`)입니다.
+- 그 위에 WONY 대상 검증, ROI/추적 상태, viewpoint gate, SBO pitcher/HUD 입력, batter 검토, bat/effect 실험과 문서를 추가했습니다.
+- 생성 영상·분석 JSON·crop·`.venv`·캐시·`node_modules`는 `.gitignore` 대상이며 소스 커밋에 포함하지 않습니다.
+- `/workspace/wony-phon`은 수정하지 않았습니다. WONY PHONE API/인증/Supabase 연동은 아직 없습니다.
+
+### 실제 영상별 검증 결과
+
+| 실제 입력 | 확인된 결과 | 보류/제한 |
+| --- | --- | --- |
+| WONY 투수, 20.045초, 1920×1080, 60fps | 사용자 지정 WONY 유지, 샘플201개 중 pose167개(83.08%), 추적 confirmed1/tracking166/low34/lost0, SBO context를 포함한 pitcher 후보, HUD 연속 프레임 voting 구조, 제한적 estimated3D6프레임 | full-body usable6/201(2.99%). 실제 release event·물리 구속·ARM 점수 보류. HUD 값은 SBO 게임 표시값이며 실제 구속이 아님 |
+| 흰옷 WONY 타격, 32.035초, 1920×1080, 60fps | 사용자 지정 유지, tracking confirmed1/tracking318/low2/lost0, pose319/321(99.38%), 오른손목306/321, manual role_hint=batter | automatic role=unknown, full-body usable0/321, estimated3D0. 실제 contact·POWER·bat speed 없음 |
+| 검은옷 WONY 타격001, 11.047초, 720×1280, 60fps | 사용자가 WONY 확인, 전체 클립 target lock, 효과/배트 후보 실험 | 명확히 검토된 완전 bat object path 없음. 같은 색 게임 효과와 귀속 혼동 가능 |
+| 검은옷 WONY 타격002, 10.035초, 720×1280, 60fps | target loss를 1.509375초에 감지하고 이후 분석 중단 | 손실 후 다른 선수를 선택하지 않음. 003은 SHA가 같은 중복이므로 독립 검증으로 세지 않음 |
+
+위 수치는 해당 파일과 수동 ROI/config에 한정합니다. 자동 아바타 재식별 정확도나 일반 SBO 방송 전체 성능으로 확대 해석하지 마세요. 영상 파일과 실제 결과 JSON은 Git에 포함하지 않습니다.
+
+### 완료 기능
+
+- 단일 WONY 수동 ROI 확인, expanded pose ROI, native-resolution crop pose와 관절별 검출률 기록.
+- `tracking` / `low_confidence` / `tracking_lost` / `reidentification_required` 상태와 terminal loss. 손실 후 다른 캐릭터 자동 선택 금지.
+- first/third/unknown viewpoint 입력과 first-person full-body/3D 차단.
+- SBO pitcher context를 기존 보수적 auto role 근거에 추가하고 `role_hint`와 자동 결과를 분리.
+- SBO HUD 영역 crop, 숫자 패턴, 연속 프레임 voting, invalid OCR rejection, 게임 원본/환산 표시값 schema.
+- pose 품질 gate를 통과한 프레임에만 estimated 3D 생성. 빈 관절을 임의 완성하지 않음.
+- LIVE/VOD, 성장 비교 호환성, 통합 리포트, 기존 2D/3D/PLAYER TOOLS null 정책 회귀 유지.
+
+### 부분 완료 기능
+
+- 실제 WONY target tracking은 짧은 클립에서 검증했습니다. 장시간 가림, 장면 전환, 유사 아바타 교차는 미검증입니다.
+- 투수 자동 역할은 해당 SBO 문맥에서 후보 판별이 가능하지만 실제 release 검증과 분리됩니다.
+- HUD OCR은 일부 안정화됐지만 UI 변형·다른 해상도·다른 숫자에서 별도 검증이 필요합니다. 낮은 합의는 value=null/review_required=true입니다.
+- batter pose는 검출률이 높아도 전신 usable이 0일 수 있습니다. 오른손목 관측은 bat path가 아닙니다.
+- rendered bat 후보의 일부 프레임 좌표와 hybrid tracking schema는 제공하지만 실제 검토 완료 fast swing path는 없습니다.
+- PLAYER TOOLS는 신뢰할 수 있는 입력 schema와 null/insufficient_data를 제공합니다. 이번 실제 영상으로 능력 점수를 만들지 않았습니다.
+
+### 미완료·미검증 기능
+
+- 빠른 swing의 실제 배트 object 기반 start→path→end 안정 추적, swing plane 및 downswing/level/uppercut 분류.
+- SBO 색상 효과가 bat trail인지 ball path/HUD/debug/과거 효과인지 의미 확정.
+- 실제 contact, bat speed, 물리 POWER, exit velocity, 실제 투수 구속 및 공식 scouting 점수.
+- 자동 WONY 재식별, 장시간 LIVE target lock, 외부 SOOP adapter, 실제 장시간 HTTP/HLS 방송 부하.
+- Windows 로컬 설치/MediaPipe/FFmpeg/Chromium 실행과 UI·UX 최종 확인.
+
+### 테스트와 브라우저 검증
+
+Linux/Python3.12에서 전체 `backend/tests` **290 passed, warning3개**, WONY 집중 묶음 **118 passed, warning3개**, `compileall`과 `pip check`를 통과했습니다. `git diff --check`도 통과했습니다. 브라우저는 새 서버에서 아래를 확인했습니다.
+
+- `npm run test:browser`: 3메뉴, 통합 리포트, 역할 탭, 2D/3D, 성장, LIVE/VOD, mobile 통과.
+- `npm run test:broadcast`: 방송 timeline, sparse scan, 수동 구간, 시각화/보정, mobile 통과.
+- `npm run test:modes`: VOD exact/approximate, LIVE file watch/stop/replay, 역할, mobile 통과.
+- `node tests/tools.mjs`: PLAYER TOOLS null/evidence/growth/capture/LIVE·VOD 연결 통과.
+- 실제 WONY `target-validation.mjs`, `batter-validation.mjs`: 수동 지정, 실제 결과 로드, 2D/3D 제한, null 정책 통과.
+
+테스트 실행:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest backend\tests -q
+cd frontend-demo
+npm ci
+$env:WONY_BASE_URL = "http://127.0.0.1:8000"
+npm run test:browser
+npm run test:broadcast
+npm run test:modes
+node tests/tools.mjs
+```
+
+실제 영상 브라우저 테스트는 로컬에 파일이 있을 때만 `WONY_REAL_CLIP`, `WONY_REAL_BATTER_CLIP`을 설정해 실행하세요. Git clone에는 영상이 없습니다.
+
+### Claude 우선 확인과 UI·UX 수정 포인트
+
+1. Windows에서 Python3.12, ffmpeg/ffprobe/libx264, venv, `pip check`, 290개 pytest, 서버/health 순서로 재현합니다.
+2. `http://127.0.0.1:8000/demo/`, `/demo/broadcast/?tab=live`, `?tab=vod`, `/demo/analyses/`, `/demo/analysis/{analysisId}`를 확인합니다.
+3. manual role과 automatic role, tracking 상태, `review_required`, 실제/DEMO를 명확히 구분합니다.
+4. HUD에는 `SBO 게임 표시값`을 붙이고 물리 구속처럼 보이지 않게 합니다.
+5. 3D에는 `estimated visualization`을 표시하며 실제 3D reconstruction이나 생체역학 측정으로 표현하지 않습니다.
+6. 데이터 부족 PLAYER TOOLS와 미완료 bat path는 0점 대신 보류/null로 보여줍니다.
+7. 추적 손실 시 재지정 안내를 보여주고 다른 캐릭터로 자동 전환하지 않습니다.
+8. 현재 대시보드/방송/기록/통합 리포트 구조를 유지하고 별도 2D·3D·Scouting 메뉴를 만들지 않습니다.
+
+다음 실제 검증에는 반복 투구가 있는 더 긴 고정 카메라 클립, 서로 독립인 타격 클립2~3개, 배트가 가려지지 않는 고FPS 원본, first/third-person 전환, 유사 아바타 교차/가림, 여러 HUD 속도값, contact 정답이 있는 장면이 필요합니다. 전신 pose usable rate 2.99%/0% 문제를 숨기거나 threshold를 낮춰 해결하지 마세요.

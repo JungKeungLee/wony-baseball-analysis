@@ -1,0 +1,28 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+const base=process.env.WONY_BASE_URL||'http://127.0.0.1:8000';
+const videoPath=process.env.WONY_REAL_CLIP;
+if(!videoPath)throw new Error('WONY_REAL_CLIP must point to the actual user-provided clip. No synthetic substitute.');
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:1100}}),errors=[];page.setDefaultTimeout(120000);page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/demo/validation/');assert.equal(await page.locator('.main-nav a').count(),3);
+ await page.locator('#validation-file').setInputFiles(videoPath);await page.waitForFunction(()=>document.querySelector('#selection-video').readyState>=2);
+ await page.locator('#capture-selection').click();const canvas=page.locator('#selection-canvas');await canvas.scrollIntoViewIfNeeded();const r=await canvas.boundingBox();
+ await page.mouse.move(r.x+920/1920*r.width,r.y+65/1080*r.height);await page.mouse.down();await page.mouse.move(r.x+1330/1920*r.width,r.y+805/1080*r.height,{steps:10});await page.mouse.up();
+ assert.equal(await page.locator('#validate-target').isDisabled(),true);await page.locator('#selection-viewpoint').selectOption('third_person');await page.locator('#confirm-target').check();assert.equal(await page.locator('#validate-target').isDisabled(),false);
+ await page.locator('#capture-selection').click();assert.equal(await page.locator('#confirm-target').isChecked(),false);assert.equal(await page.locator('#validate-target').isDisabled(),true);
+ await canvas.scrollIntoViewIfNeeded();const r2=await canvas.boundingBox();await page.mouse.move(r2.x+920/1920*r2.width,r2.y+65/1080*r2.height);await page.mouse.down();await page.mouse.move(r2.x+1330/1920*r2.width,r2.y+805/1080*r2.height,{steps:10});await page.mouse.up();await page.locator('#confirm-target').check();
+ await page.screenshot({path:'/tmp/wony-real-validation/improved-manual-selection.png',fullPage:true});
+ await page.locator('#validate-target').click();await page.waitForURL('**/demo/validation/report/*');await page.waitForFunction(()=>document.querySelector('#report-meta').textContent.length>0);
+ const id=page.url().split('/').at(-1),analysis=await (await page.request.get(base+'/api/validation/'+id+'/analysis')).json();
+ assert.equal(analysis.validation_only,true);assert.equal(analysis.synthetic_demo,false);assert.equal(analysis.player_id,'wony');assert.equal(analysis.target_tracking.identity_source,'user_confirmation');assert.equal(analysis.target_tracking.automatic_reidentification,false);
+ assert.match(await page.locator('#source-badge').textContent(),/실제 영상 검증/);assert.doesNotMatch(await page.locator('#source-badge').textContent(),/DEMO/);
+ assert.equal(analysis.ball_speed,null);assert.equal(analysis.batted_ball_speed,null);assert.ok(analysis.source_time_mapping.every(m=>Number.isInteger(m.original_pts)));
+ assert.equal(analysis.role,'pitcher');assert.ok(analysis.automatic_role_estimate.confidence>=.7);assert.equal(analysis.role_input.role_hint,'auto');assert.ok(analysis.validation_summary.pose_margin===.2);assert.equal(analysis.status,'input_validation_only');assert.equal(analysis.events.length,0);assert.equal(analysis.metrics.release_time.value,null);assert.equal(analysis.phase_evidence_gate.allow_phase_candidates,false);assert.equal(analysis.visualization.pose3d.accuracy,null);assert.ok(analysis.visualization.pose3d.frames.some(f=>!f.joints||Object.keys(f.joints).length===0));assert.ok(Object.values(analysis.scouting_report.player_tools).every(t=>t.score===null&&t.status==='insufficient_data'));
+ await page.locator('#play-list button').first().click();assert.equal(await page.locator('[data-mode="original"]').isDisabled(),false);await page.locator('[data-mode="pose"]').click();assert.equal(await page.locator('#three-stage canvas').count(),1);assert.equal(await page.locator('#pose-view').isVisible(),true);
+ const usable3d=analysis.visualization.pose3d.frames.find(f=>Object.keys(f.joints).length>0);assert.ok(usable3d);await page.locator('#timeline').fill(String(usable3d.frame));await page.locator('#timeline').dispatchEvent('input');await page.locator('[data-view="side"]').click();await page.screenshot({path:'/tmp/wony-real-validation/improved-3d-validation.png',fullPage:true});
+ await page.locator('[data-mode="skeleton"]').click();await page.screenshot({path:'/tmp/wony-real-validation/improved-2d-validation.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);
+ console.log(JSON.stringify({passed:true,analysis_id:id,summary:analysis.validation_summary,scope:'Real confirmed WONY clip; manual selection, isolated validation API, original/2D/estimated-3D viewer, SBO context pitcher hypothesis, gated 3D and withheld tools, PTS map, mobile'}));
+}finally{await browser.close();}
