@@ -25,7 +25,7 @@ def load(job_id):
     p=root()/str(job_id)/'job.json'
     if not p.exists(): raise HTTPException(404,'Broadcast job not found')
     with LOCK:
-        job=json.loads(p.read_text())
+        job=json.loads(p.read_text(encoding='utf-8'))
     if job['status'] in ['queued','running'] and str(job_id) not in ACTIVE:
         job.update(status='interrupted',error='Worker stopped; source retained for manual correction')
     return job
@@ -106,7 +106,7 @@ def run(job,do_scan):
         remote=root()/job['id']/'remote.json'
         if remote.exists():
             from app.source.remote import open_remote
-            source=resources.enter_context(open_remote(json.loads(remote.read_text())['url']))
+            source=resources.enter_context(open_remote(json.loads(remote.read_text(encoding='utf-8'))['url']))
             path=source.path
         else:source=FileSource(path)
         job['status']='running'

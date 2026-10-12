@@ -11,7 +11,7 @@ from app.validation.quality import visible_joint
 
 
 def pitching_header(frame):
-    config=json.loads((Path(__file__).parent/'templates/sbo_pitching.json').read_text())
+    config=json.loads((Path(__file__).parent/'templates/sbo_pitching.json').read_text(encoding='utf-8'))
     h,w=frame.shape[:2];sx=w/1920;sy=h/1080;x,y,bw,bh=config['search_box']
     region=frame[round(y*sy):round((y+bh)*sy),round(x*sx):round((x+bw)*sx)]
     template=np.array([[int(v)*255 for v in row] for row in config['bitmap']],dtype=np.uint8)

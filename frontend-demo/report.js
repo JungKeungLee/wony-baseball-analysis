@@ -4,10 +4,13 @@ import { OrbitControls } from '/demo/vendor/OrbitControls.js';
 const $ = id => document.getElementById(id);
 const video = $('overlay');
 const timeline = $('timeline');
-const roleLabels = {batter:'타격',defense:'수비',catcher:'포수',pitcher:'투수',baserunning:'주루',unknown:'역할 미확인'};
+const roleLabels = {batter:'타격',defense:'수비',catcher:'포수',pitcher:'투수',baserunning:'주루',unknown:'역할 확인 불가'};
+// 내부 상태 코드를 초보자용 문장으로 바꾼다. 값 자체는 바꾸지 않고 표시만 바꾼다.
+const friendlyTerms={insufficient_data:'관찰 데이터 부족',insufficient_pose:'자세 관찰 데이터 부족',input_validation_only:'입력 확인만 완료 · 능력 평가 전',confirmed:'처음 지정됨',tracking:'추적 중',low_confidence:'추적이 불확실해 분석에서 제외',tracking_lost:'선수를 잠시 찾지 못했습니다',reidentification_required:'WONY를 다시 선택해주세요',unknown:'역할을 확인할 수 없습니다',completed:'분석 완료',not_supported:'현재 미지원'};
+const friendly=code=>friendlyTerms[code]||code;
 const eventLabels = {swing:'스윙',receive:'포구',fielding:'수비 동작',release:'투구',run:'주루',start:'출발',sprint:'주루'};
 const eventLabel = type => eventLabels[type]||'플레이';
-const stageLabels = {stance:'스탠스',load:'로드',front_foot_landing:'앞발 착지 참고',swing_start:'스윙 시작 후보',estimated_impact:'임팩트 참고',follow_through:'팔로스루 후보',setup:'준비',leg_lift:'레그 리프트 후보',stride:'스트라이드 후보',arm_cocking:'암 코킹 후보',release:'릴리스 후보',ready:'준비',action:'동작 후보',finish:'마무리'};
+const stageLabels = {pose_reference:'자세 참고 장면',stance:'스탠스',load:'로드',front_foot_landing:'앞발 착지 참고',swing_start:'스윙 시작 후보',estimated_impact:'임팩트 참고',follow_through:'팔로스루 후보',setup:'준비',leg_lift:'레그 리프트 후보',stride:'스트라이드 후보',arm_cocking:'암 코킹 후보',release:'릴리스 후보',ready:'준비',action:'동작 후보',finish:'마무리'};
 const angleLabels = {shoulder_angle:'어깨 각도',elbow_angle:'팔꿈치 각도',hip_rotation:'골반선 변화',knee_flexion:'무릎 굽힘',trunk_lean:'상체 기울기'};
 let selectedRole='batter', result=null, frameIndex=-1, preferredStage=null, busy=false;
 let renderer, scene, camera, controls;
@@ -49,7 +52,7 @@ function showFigure(frame){
   const joints=frame?.joints||{};
   const names=Object.keys(joints);
   $('three-empty').hidden=names.length>0;
-  if(!names.length){$('three-empty').textContent='이 프레임에는 표시할 관절이 없습니다.';return;}
+  if(!names.length){$('three-empty').textContent=frame?.reason?'이 장면은 전신이 충분히 보이지 않아 추정 3D 자세를 표시하지 않습니다.':'이 장면에는 표시할 관절이 없습니다.';return;}
   for(const [name,coords] of Object.entries(joints)){
     if(!jointMeshes.has(name)){
       const mesh=new THREE.Mesh(new THREE.SphereGeometry(name==='head'?.09:.04,20,16),new THREE.MeshStandardMaterial({color:name==='head'?0xe2f7e8:0x9ff2d0,roughness:.35}));
@@ -87,6 +90,16 @@ function renderAngles(key){
   $('phase-reason').textContent=key?.reason||'VR 아바타의 애니메이션은 실제 사람의 움직임과 다를 수 있습니다.';
 }
 renderAngles(null);
+// 3D가 있는 장면이 일부뿐일 때 사용자가 찾을 수 있도록 이동 버튼을 보여준다.
+function updatePoseJump(frame){
+  const button=$('pose-jump');if(!button||!result)return;
+  const available=(result.visualization.pose3d?.frames||[]).filter(f=>f.joints&&Object.keys(f.joints).length);
+  const empty=!frame?.joints||!Object.keys(frame.joints).length;
+  button.hidden=!(empty&&available.length);
+  button.textContent=`추정 3D가 있는 장면으로 이동 (${available.length}개 장면)`;
+  button.onclick=()=>{const next=available.find(f=>f.frame>frameIndex)||available[0];video.pause();video.currentTime=next.timestamp;updateFrame(next.frame,true);};
+  if(empty&&!available.length)$('three-empty').textContent='이 영상에서는 전신이 충분히 보이지 않아 추정 3D 자세를 만들지 않았습니다.';
+}
 function updateFrame(index,force=false){
   if(!result)return;
   const count=result.visualization.frame_count;
@@ -101,6 +114,7 @@ function updateFrame(index,force=false){
   $('frame-label').textContent=`${time.toFixed(2)}s · frame ${next}`;
   $('confidence-label').title=`추정 confidence ${frame?.confidence?.toFixed(2)||'0.00'} · LOW · 깊이 미보정`;
   showFigure(frame);
+  updatePoseJump(frame);
   const keys=result.visualization.keyframes.filter(k=>k.frame===next);
   const key=keys.find(k=>k.stage===preferredStage)||keys[0];
   preferredStage=key?.stage??null;
@@ -218,7 +232,7 @@ async function loadReport(){try{const id=location.pathname.split('/').filter(Boo
  const segments=bundle.segments?.map(s=>`${hhmmss(s.start)} ~ ${hhmmss(s.end??s.last_signal??s.start)}`).join(', ');const coverage=bundle.entries.reduce((sum,e)=>sum+Math.max(0,(e.end||e.start)-e.start),0);
  $('report-meta').textContent=`분석 날짜 ${bundle.analysis_date||'미보관'} · ${segments?'야구 후보 구간 '+segments:'단일 분석 클립'} · 실제 처리 ${coverage.toFixed(1)}초 / ${bundle.entries.length}클립 · 역할 ${[...roles].map(r=>roleLabels[r]||r).join(' · ')}`;
  $('source-badge').hidden=!bundle.synthetic_demo;$('source-badge').textContent='예시 데이터 (DEMO)';$('source-badge').title='합성 데이터 · 실제 선수 평가 아님';
- if(bundle.kind==='validation'){document.querySelector('h1').firstChild.textContent='WONY 실영상 기술 검증 ';$('sum-plays').previousElementSibling.textContent='검증 클립';$('sum-time').previousElementSibling.textContent='영상 검증 시간';$('source-badge').hidden=false;$('source-badge').textContent='실제 영상 검증 · 실험적';$('source-badge').title='사용자 확인 대상 ROI의 기술 검증. 경기 능력 평가 완료 아님';const v=bundle.entries[0].analysis.validation_summary,t=bundle.entries[0].analysis.target_tracking;const notice=node('p',`수동 대상 ${t.identity_source} · 추적 ${t.status}${t.lost_at!=null?' / 손실 '+t.lost_at.toFixed(3)+'초':''} · pose 검출 ${v.pose_detected_frames}/${v.tracking_allowed_frames} · 전신 품질 통과 ${v.usable_general_pose_frames} · 참고 3D ${v.estimated_3d_frames}프레임. 검출 성공이 자세 정확도 검증을 의미하지 않습니다.`,'hint');$('overview').prepend(notice);
+ if(bundle.kind==='validation'){document.querySelector('h1').firstChild.textContent='WONY 실영상 기술 검증 ';$('sum-plays').previousElementSibling.textContent='검증 클립';$('sum-time').previousElementSibling.textContent='영상 검증 시간';$('source-badge').hidden=false;$('source-badge').textContent='실제 영상 검증 · 실험적';$('source-badge').title='사용자 확인 대상 ROI의 기술 검증. 경기 능력 평가 완료 아님';const v=bundle.entries[0].analysis.validation_summary,t=bundle.entries[0].analysis.target_tracking;$('report-details').prepend(node('p',`수동 대상 ${t.identity_source} · 추적 ${t.status}${t.lost_at!=null?' / 손실 '+t.lost_at.toFixed(3)+'초':''} · pose 검출 ${v.pose_detected_frames}/${v.tracking_allowed_frames} · 전신 품질 통과 ${v.usable_general_pose_frames} · 참고 3D ${v.estimated_3d_frames}프레임. 검출 성공이 자세 정확도 검증을 의미하지 않습니다.`,'muted'));renderWony(bundle.entries[0].analysis);
  const hud=bundle.entries[0].analysis.hud_observations||[];if(hud.length){const detail=node('details',null,'tech');detail.append(node('summary','HUD OCR 상세 · 미확정 숫자 후보'));detail.append(node('p','OCR 후보는 경기 구속/타격 속도 측정값이 아닙니다. 검토 전 accepted value는 null이며 투구 이벤트와 연결하지 않습니다.'));for(const h of hud){const p=node('p',`${h.timestamp.toFixed(3)}초 · ${h.metric} · OCR 후보 ${h.ocr_candidate??'없음'} · OCR confidence ${h.ocr_confidence??0} · 검토 필요`);if(h.evidence_reference){const a=node('a','근거 crop');a.href=h.evidence_reference;a.target='_blank';p.append(' ',a);}detail.append(p);}$('report-details').append(detail);}}
 
  const playCounts={};for(const e of bundle.entries){const n=plays(e).length||1;playCounts[e.analysis.role]=(playCounts[e.analysis.role]||0)+n;}
@@ -226,7 +240,7 @@ async function loadReport(){try{const id=location.pathname.split('/').filter(Boo
  $('sum-date').textContent=bundle.analysis_date||'—';$('sum-time').textContent=duration(baseballSeconds);$('sum-plays').textContent=bundle.kind==='validation'?`${bundle.entries.length}개 · 플레이 미확정`:`${Object.values(playCounts).reduce((a,b)=>a+b,0)}개`;
  $('sum-roles').replaceChildren(...Object.entries(playCounts).map(([role,n])=>{const c=node('span',roleLabels[role]||role,'role-count');c.append(node('b',String(n)));return c;}));$('status').textContent='공식 스카우팅 점수 아님 · 낮은 confidence는 판정 보류';
  feedback('report-strengths',bundle.entries.flatMap(e=>e.analysis.scouting_report?.strengths||e.analysis.strengths||[]));feedback('report-development',bundle.entries.flatMap(e=>e.analysis.scouting_report?.development_areas||e.analysis.weaknesses||[]));renderTools();selectRole('all');renderGrowth();
- }catch(error){$('report-error').textContent=error.message;}}
+ }catch(error){$('report-error').textContent=`${error.message} 주소가 맞는지 확인하거나 분석 기록에서 다시 열어주세요.`;$('report-summary').textContent='';}}
 loadReport();
 
 $('original-video').addEventListener('play',()=>{$('play').textContent='❚❚ 일시 정지';});$('original-video').addEventListener('pause',()=>{$('play').textContent='▶ 재생';});
@@ -246,4 +260,26 @@ function renderTools(){
  $('player-tools').replaceChildren();for(const name of ['contact','power','speed','fielding','arm']){const item=bundle.player_tools?.[name]||{status:'insufficient_data',summary:'분석 근거가 없습니다.',estimated:true};$('player-tools').append(toolCard(name,item));}
  $('scout-classifications').textContent='BEST TOOL: 판단 보류 · DEVELOPMENT AREA: 순위 판단 보류 · PLAY STYLE: 판단 보류. 검증된 능력 평가 근거가 없습니다.';
  $('overview-role-summaries').replaceChildren();const seen=new Set();for(const entry of bundle.entries){const r=entry.analysis;if(seen.has(r.role))continue;seen.add(r.role);const line=node('p',null,'scout-role-line');line.append(node('strong',(roleLabels[r.role]||r.role)+' · '),node('span',r.scouting_report?.role_summary?.summary||entry.scouting_extension?.role_summary?.summary||'관측 데이터 부족'));$('overview-role-summaries').append(line);}
+}
+
+// 실제 WONY 검증 결과를 초보자가 읽을 수 있는 상태 카드로 보여준다. 근거가 없는 값은 만들지 않는다.
+function renderWony(a){
+ const t=a.target_tracking,v=a.validation_summary,cards=[];
+ const card=(title,main,sub,tone)=>{const c=node('div',null,'wony-card'+(tone?' '+tone:''));c.append(node('small',title),node('strong',main));if(sub)c.append(node('p',sub));cards.push(c);return c;};
+ card('대상','WONY · 직접 지정','자동 인식이 아니라 사용자가 영상에서 WONY를 골랐습니다.');
+ const states=v.tracking_states||{};
+ if(t.lost_at!=null){const c=card('추적',friendly('tracking_lost'),`${t.lost_at.toFixed(2)}초부터 분석을 멈췄습니다. 다른 선수로 자동으로 바꾸지 않습니다.`,'warn');const link=node('a','WONY를 다시 선택해주세요 →');link.href='/demo/validation/';c.append(link);}
+ else card('추적','끝까지 따라감',states.low_confidence?`흐릿했던 ${states.low_confidence}개 장면은 분석에서 뺐습니다.`:'영상 끝까지 같은 선수를 따라갔습니다.');
+ const input=a.role_input||{},auto=a.automatic_role_estimate||{};
+ if(input.source==='user_provided')card('역할',`${roleLabels[a.role]||a.role} · 직접 입력`,`자동 판별 결과: ${auto.value&&auto.value!=='unknown'?(roleLabels[auto.value]||auto.value)+' (추정)':friendly('unknown')}`);
+ else card('역할',a.role&&a.role!=='unknown'?`${roleLabels[a.role]||a.role} · 자동 추정`:friendly('unknown'),a.role&&a.role!=='unknown'?'화면 표시와 팔 동작으로 추정했습니다. 확인이 필요합니다.':'근거가 부족해 역할을 정하지 않았습니다.',a.role==='unknown'?'muted-card':null);
+ card('전신 자세',`${v.usable_general_pose_frames} / ${v.sampled_frames} 장면`,v.usable_general_pose_frames?'팔·다리가 충분히 보인 장면만 자세 분석에 씁니다.':'팔·다리가 가려져 전신 자세 평가는 보류했습니다.',v.usable_general_pose_frames?null:'muted-card');
+ card('추정 3D 자세',v.estimated_3d_frames?`${v.estimated_3d_frames} 장면`:'표시 안 함',v.estimated_3d_frames?'참고용 시각화입니다. 실제 3D 복원이 아닙니다.':'전신이 충분히 보이지 않아 만들지 않았습니다.',v.estimated_3d_frames?null:'muted-card');
+ const hud=a.game_hud_speed;
+ if(a.hud_observations?.length&&hud){const shown=[hud.converted_game_speed_kmh!=null?`${hud.converted_game_speed_kmh} km/h`:null,hud.raw_game_speed!=null?`원본 ${hud.raw_game_speed}`:null].filter(Boolean);const read=a.hud_observations.some(o=>o.ocr_candidate!=null);card('게임 화면 속도 표시',shown.length?shown.join(' · '):'확정 못함',shown.length?'SBO 게임이 화면에 띄운 값입니다. 실제 구속이 아니며 사람 확인이 필요합니다.':read?'화면 숫자를 읽었지만 판독 확신이 낮아 값을 비워 두었습니다. (SBO 게임 표시값 · 실제 구속 아님)':'화면 숫자를 읽지 못했습니다. (SBO 게임 표시값 · 실제 구속 아님)',shown.length?null:'muted-card');}
+ const b=a.batter_validation;
+ if(b){const hands=b.plays.filter(p=>p.right_hand_path_2d_proxy?.value!=null).length;card('타격 관찰',`검토 구간 ${b.plays.length}개`,`오른손목 움직임이 보인 구간 ${hands}개. 배트 경로·컨택·스윙 판정은 아직 검증 전입니다.`);}
+ const panel=node('article',null,'report-section wony-status');panel.append(node('h2','WONY 분석 상태'));const grid=node('div',null,'wony-grid');grid.append(...cards);panel.append(grid);
+ panel.append(node('p','실제 영상으로 기능을 확인하는 단계입니다. 선수 능력 점수가 아니며, 정식 성장 기록에는 넣지 않습니다.','hint'));
+ $('overview').prepend(panel);
 }

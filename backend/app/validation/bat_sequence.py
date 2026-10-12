@@ -59,7 +59,7 @@ def wrist_hint(pose_samples,index,t,width,height):
 def validate_bat_sequence(video,config:BatConfig,output_root,target_report=None):
     meta=metadata(video);sha=digest(video);target=None;tracking=[]
     if target_report:
-        target=json.loads(Path(target_report).read_text())
+        target=json.loads(Path(target_report).read_text(encoding='utf-8'))
         if digest(Path(target_report).parent/'source.mp4')!=sha:raise ValueError('Target lock report must match this exact video')
         selection=target['target_tracking']['selection']
         if not selection['confirmed_by_user'] or selection['viewpoint']!='third_person':raise ValueError('Confirmed third-person target required; no first-person body/bat attribution')
@@ -175,5 +175,5 @@ def validate_bat_sequence(video,config:BatConfig,output_root,target_report=None)
         'warnings':['Manual object appearance seeds are not automatic bat detection. Detection/flow association may drift; actual paths require sequence review.',
             'Colored effects may be ball trajectories, HUD/debug vectors or bat effects. Detection is not semantic confirmation.',
             'No new role template/threshold relaxation, true bat speed, contact score, lower-body power or 3D reconstruction.']}
-    (folder/'analysis.json').write_text(json.dumps(result,ensure_ascii=False,allow_nan=False))
+    (folder/'analysis.json').write_text(json.dumps(result,ensure_ascii=False,allow_nan=False),encoding='utf-8')
     return result,folder

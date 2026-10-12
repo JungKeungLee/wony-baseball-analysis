@@ -29,7 +29,7 @@ def persist(session):
 def load(session_id):
     path=root()/str(session_id)/'session.json'
     if not path.exists():raise HTTPException(404,'Live session not found')
-    with LOCK:session=json.loads(path.read_text())
+    with LOCK:session=json.loads(path.read_text(encoding='utf-8'))
     if session['status']=='running' and str(session_id) not in RUNTIME:
         session.update(status='interrupted',error='Worker stopped; automatic reconnect/resume is not implemented')
     return session

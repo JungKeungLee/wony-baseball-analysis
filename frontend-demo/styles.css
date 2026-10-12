@@ -99,3 +99,22 @@ a.mini-item:hover{color:var(--accent)}
 .tool-card button{margin-top:8px;width:100%;white-space:normal}.tool-observation{border-top:1px solid #304349;padding:8px 0}
 .scout-role-line{padding:12px 0;border-bottom:1px solid #304349}.scout-tools h2{letter-spacing:.06em}
 @media(max-width:540px){.tool-grid{grid-template-columns:1fr}}
+
+/* WONY 실제 영상 상태 패널 */
+.wony-status{border-color:#3a5349}
+.wony-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:12px}
+.wony-card{background:#0f171d;border:1px solid var(--border);border-radius:10px;padding:14px;min-width:0}
+.wony-card small{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
+.wony-card strong{display:block;font-size:17px;line-height:1.35;overflow-wrap:anywhere}
+.wony-card p{margin:6px 0 0;color:#bfd0cf;font-size:13px;line-height:1.55;overflow-wrap:anywhere}
+.wony-card a{display:inline-block;margin-top:8px;font-weight:700}
+.wony-card.warn{border-color:#8a5a3a;background:#241912}
+.wony-card.warn strong{color:#ffc59a}
+.wony-card.muted-card strong{color:#9fb0b8}
+.error-text:not(:empty){border:1px solid #7a3b3b;background:#2a1616;color:#ffb4b4;border-radius:8px;padding:12px 14px;font-size:14px}
+.tool-card,.report-feedback li,.scout-role-line{overflow-wrap:anywhere}
+button,.chip{min-height:40px}
+.confirm-row{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:650;margin:6px 0 16px;cursor:pointer}.confirm-row input{width:20px;height:20px}#validation-status{font-size:14px}
+.wony-entry{display:flex;align-items:center;gap:16px;margin-top:14px;padding:16px 20px;border:1px solid var(--border);border-radius:14px;background:var(--panel);color:var(--text)}.wony-entry:hover{border-color:var(--accent)}.wony-entry b{display:block;font-size:16px}.wony-entry small{display:block;color:var(--muted);font-size:13px;margin-top:2px}.wony-entry .cta{margin-left:auto;color:var(--accent);font-weight:700;white-space:nowrap}@media(max-width:600px){.wony-entry{flex-wrap:wrap}.wony-entry .cta{margin-left:0}}
+.pose-jump{position:absolute;top:14px;right:14px;z-index:3;background:#1b2f29;border-color:#518368;color:var(--accent);font-size:13px}@media(max-width:600px){.pose-jump{top:auto;bottom:40px;right:10px;left:10px}}
+@media(max-width:600px){#player-tools.tool-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}#player-tools .tool-card{padding:12px}#player-tools .tool-card h3{font-size:13px}#player-tools .tool-card p{font-size:12px}}
