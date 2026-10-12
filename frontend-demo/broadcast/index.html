@@ -24,7 +24,11 @@
  <div id="vod-file-box"><input id="broadcast-file" type="file" accept="video/*"><p class="hint">최대 24시간 · 8 GiB</p></div>
  <div id="vod-url-box" hidden><input id="vod-url" type="url" placeholder="https://..." style="width:100%;font-size:15px;padding:12px 14px;background:#0b151c;border:1px solid #32424b;border-radius:8px;color:var(--text)"><p class="notice">직접 MP4 또는 종료된 HLS(m3u8) URL을 지원합니다. SOOP 등 플랫폼 페이지 URL은 아직 지원하지 않습니다.</p></div></div>
 <div class="field"><span class="field-title">2. 야구 시간</span><div class="radio-row"><label><input type="radio" name="vod-time" value="unknown" checked> 시간을 모름 <small>전체 영상에서 자동 탐색</small></label><label><input type="radio" name="vod-time" value="approx"> 대략적인 시간 알고 있음</label></div>
- <div id="vod-time-box" hidden><div class="time-grid"><label>시작<input id="vod-start" placeholder="04:20:00"></label><label>종료<input id="vod-end" placeholder="05:30:00"></label><label>또는 중심 시간<input id="vod-center" placeholder="05:00:00"></label></div><p class="hint">정확하지 않아도 됩니다. 입력한 시간 앞뒤를 넉넉히 함께 찾아봅니다.</p></div></div>
+ <div id="vod-time-box" hidden>
+  <div class="radio-row hint-row"><label><input type="radio" name="vod-hint" value="range" checked> 시작 ~ 종료</label><label><input type="radio" name="vod-hint" value="center"> 중심 시간 하나</label></div>
+  <div class="time-grid"><label id="vod-start-label">시작 (시:분:초)<input id="vod-start" inputmode="numeric" placeholder="00:00:01"></label><label id="vod-end-label">종료 (시:분:초)<input id="vod-end" inputmode="numeric" placeholder="00:00:20"></label><label id="vod-center-label" hidden>중심 시간 (시:분:초)<input id="vod-center" inputmode="numeric" placeholder="00:00:10"></label></div>
+  <p class="hint">시:분:초로 입력해요. 숫자만 쓰면 초로 계산해요 (20 → 00:00:20). <span id="vod-length"></span></p>
+  <p class="hint">정확하지 않아도 됩니다. 입력한 시간 앞뒤를 넉넉히 함께 찾아봅니다.</p></div></div>
 <p class="hint" style="margin:0 0 16px">역할: <b>자동 분석</b> — 찾은 구간의 역할이 확실하지 않으면 분석 전에 한 번 물어봅니다.</p>
 <div class="actions"><button id="broadcast-scan" class="primary big">야구 구간 찾기</button></div>
 <p id="broadcast-status" role="status"></p><div id="vod-role-counts" class="role-counts"></div><p id="broadcast-duration" class="hint"></p><div id="broadcast-track" class="broadcast-track" aria-label="야구 구간 타임라인" hidden></div>

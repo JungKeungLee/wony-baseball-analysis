@@ -14,6 +14,28 @@ function syncSource(){const url=radio('vod-source')==='url';el('vod-url-box').hi
 function syncTime(){const approx=radio('vod-time')==='approx';el('vod-time-box').hidden=!approx;if(approx&&el('vod-mode').value==='auto')el('vod-mode').value='approximate';if(!approx)el('vod-mode').value='auto';}
 document.querySelectorAll('input[name="vod-source"]').forEach(r=>r.onchange=syncSource);
 document.querySelectorAll('input[name="vod-time"]').forEach(r=>r.onchange=syncTime);
+// ---- VOD 시간 입력: 시작~종료 또는 중심 시간 중 하나만 보낸다. 서버는 초("20") 또는 HH:MM:SS를 받는다. ----
+let fileDuration=null;
+function syncHint(){const center=radio('vod-hint')==='center';el('vod-start-label').hidden=center;el('vod-end-label').hidden=center;el('vod-center-label').hidden=!center;}
+document.querySelectorAll('input[name="vod-hint"]').forEach(r=>r.onchange=syncHint);
+const parseTime=text=>{text=String(text||'').trim();if(/^\d+(\.\d+)?$/.test(text))return Number(text);const m=/^(\d+):([0-5]?\d):([0-5]?\d(?:\.\d+)?)$/.exec(text);return m?Number(m[1])*3600+Number(m[2])*60+Number(m[3]):NaN;};
+const hms=t=>`${String(Math.floor(t/3600)).padStart(2,'0')}:${String(Math.floor(t/60)%60).padStart(2,'0')}:${(t%60).toFixed(t%1?1:0).padStart(2,'0')}`;
+// 선택한 파일의 실제 길이를 읽어 두고 입력 범위를 먼저 확인한다.
+el('broadcast-file').addEventListener('change',()=>{fileDuration=null;el('vod-length').textContent='';const file=el('broadcast-file').files[0];if(!file)return;const probe=document.createElement('video');probe.preload='metadata';probe.onloadedmetadata=()=>{if(Number.isFinite(probe.duration)&&probe.duration>0){fileDuration=probe.duration;el('vod-length').textContent=`이 영상의 길이: ${hms(fileDuration)} (${fileDuration.toFixed(1)}초)`;}URL.revokeObjectURL(probe.src);};probe.src=URL.createObjectURL(file);});
+function timeHints(mode){
+ // 반환: {fields} 또는 {error}. 선택하지 않은 방식의 값은 보내지 않는다.
+ const center=mode==='approximate'&&radio('vod-hint')==='center';
+ if(center){const c=parseTime(el('vod-center').value);if(!el('vod-center').value.trim())return {error:'중심 시간을 입력해주세요.'};if(!Number.isFinite(c))return {error:'중심 시간은 시:분:초(예: 00:00:10) 또는 초로 입력해주세요.'};if(fileDuration!=null&&c>=fileDuration)return {error:`중심 시간이 영상 범위를 벗어났습니다. (영상 길이 ${hms(fileDuration)})`};return {fields:{center_time:String(c)}};}
+ const a=parseTime(el('vod-start').value),b=parseTime(el('vod-end').value);
+ if(!el('vod-start').value.trim()||!el('vod-end').value.trim())return {error:'시작과 종료 시간을 모두 입력해주세요.'};
+ if(!Number.isFinite(a)||!Number.isFinite(b))return {error:'시간은 시:분:초(예: 00:00:20) 또는 초로 입력해주세요.'};
+ if(a<0)return {error:'시작 시간은 0초 이상이어야 합니다.'};
+ if(b<=a)return {error:'시작 시간은 종료 시간보다 작아야 합니다.'};
+ if(fileDuration!=null&&b>fileDuration)return {error:`종료 시간이 영상 길이를 초과했습니다. (영상 길이 ${hms(fileDuration)} · ${fileDuration.toFixed(1)}초)`};
+ return {fields:{start:String(a),end:String(b)}};
+}
+const vodErrors={vod_end_after_duration:'종료 시간이 영상 길이를 초과했습니다.',vod_start_not_before_end:'시작 시간은 종료 시간보다 작아야 합니다.',vod_center_outside:'중심 시간이 영상 범위를 벗어났습니다.',vod_hint_conflict:'시작~종료와 중심 시간 중 한 가지만 입력해주세요.',vod_range_missing:'시작과 종료 시간을 모두 입력해주세요.',vod_time_format:'시간은 시:분:초(예: 00:00:20) 또는 초로 입력해주세요.',vod_start_negative:'시작 시간은 0초 이상이어야 합니다.'};
+const vodError=message=>{const code=(/^\[(\w+)\]/.exec(message)||[])[1];return vodErrors[code]?`${vodErrors[code]} (${message.replace(/^\[\w+\]\s*/,'')})`:message;};
 el('vod-mode').onchange=()=>{const approx=el('vod-mode').value!=='auto';document.querySelector(`input[name="vod-time"][value="${approx?'approx':'unknown'}"]`).checked=true;el('vod-time-box').hidden=!approx;};
 
 function friendlyStatus(data){
@@ -61,7 +83,10 @@ function render(data){
 }
 function view(segment){const v=el('broadcast-video');v.src=sourceURL||job.source_url;v.hidden=false;v.currentTime=segment.start;v.onloadedmetadata=()=>{v.currentTime=segment.start;};v.ontimeupdate=()=>{if(v.currentTime>=segment.end)v.pause();};}
 async function poll(id){clearTimeout(pollTimer);try{const data=await request(`/api/broadcasts/${id}`);render(data);if(running(data))pollTimer=setTimeout(()=>poll(id),1500);}catch(e){el('broadcast-status').textContent=e.message;}}
-el('broadcast-scan').onclick=async()=>{const file=el('broadcast-file').files[0];const url=radio('vod-source')==='url'?el('vod-url').value.trim():null;if(!file&&!url){el('broadcast-status').textContent='분석할 영상 파일을 선택하세요.';return;}el('broadcast-scan').disabled=true;el('broadcast-status').textContent='영상을 올리는 중입니다…';try{if(sourceURL)URL.revokeObjectURL(sourceURL);sourceURL=url||URL.createObjectURL(file);const form=new FormData();appendCapture(form,'vod-capture');if(url)form.append('source_url',url);else form.append('video',file);form.append('sample_interval',el('broadcast-interval').value);form.append('buffer',el('broadcast-buffer').value);const manual=el('broadcast-corrections').value.trim();if(manual)form.append('segments',manual);const mode=el('vod-mode').value;form.append('mode',mode);form.append('role',el('vod-role').value);if(mode!=='auto'){for(const [id,key] of [['vod-start','start'],['vod-end','end'],['vod-center','center_time']]){if(el(id).value.trim())form.append(key,el(id).value.trim());}form.append('buffer_minutes',el('vod-margin').value);form.append('search_window_minutes',el('vod-window').value);}const data=await request('/api/vod',{method:'POST',body:form});render(data);poll(data.id);}catch(e){el('broadcast-status').textContent=e.message;}finally{syncSource();}};
+el('broadcast-scan').onclick=async()=>{const file=el('broadcast-file').files[0];const url=radio('vod-source')==='url'?el('vod-url').value.trim():null;if(!file&&!url){el('broadcast-status').textContent='분석할 영상 파일을 선택하세요.';return;}el('broadcast-scan').disabled=true;el('broadcast-status').textContent='영상을 올리는 중입니다…';try{if(sourceURL)URL.revokeObjectURL(sourceURL);sourceURL=url||URL.createObjectURL(file);const form=new FormData();appendCapture(form,'vod-capture');if(url)form.append('source_url',url);else form.append('video',file);form.append('sample_interval',el('broadcast-interval').value);form.append('buffer',el('broadcast-buffer').value);const manual=el('broadcast-corrections').value.trim();if(manual)form.append('segments',manual);const mode=el('vod-mode').value;form.append('mode',mode);form.append('role',el('vod-role').value);if(mode!=='auto'&&!manual){const hints=timeHints(mode);if(hints.error){el('broadcast-status').textContent=hints.error;return;}for(const [key,value] of Object.entries(hints.fields))form.append(key,value);form.append('buffer_minutes',el('vod-margin').value);form.append('search_window_minutes',el('vod-window').value);}
+ // 실제 전송값 기록 (영상은 파일명·크기만)
+ const sent=Object.fromEntries([...form.entries()].map(([k,v])=>[k,v instanceof File?{file:v.name,size:v.size,type:v.type}:v]));console.info('[VOD] payload',JSON.stringify({...sent,duration:fileDuration}));
+ const data=await request('/api/vod',{method:'POST',body:form});render(data);poll(data.id);}catch(e){el('broadcast-status').textContent=vodError(e.message);}finally{syncSource();}};
 el('broadcast-save').onclick=async()=>{try{await resubmit(JSON.parse(el('broadcast-corrections').value));}catch(e){el('broadcast-status').textContent=e.message;}};
 el('broadcast-example').onclick=async()=>{clearTimeout(pollTimer);sourceURL=null;render(await request('/api/broadcast-demo'));};
 
