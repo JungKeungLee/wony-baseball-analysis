@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from app.validation.target import TargetSelection
 from app.validation.runner import validate_clip
+from app.validation.records import save_source_name
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
@@ -17,6 +18,7 @@ if __name__=='__main__':
     hud=json.loads(args.hud_config.read_text(encoding='utf-8')) if args.hud_config else None
     review=json.loads(args.batter_review.read_text(encoding='utf-8')) if args.batter_review else None
     result=validate_clip(args.video,selection,args.output,hud_regions=hud,batter_review=review)
+    save_source_name(args.output/result['id'],args.video.name)
     print(json.dumps({'id':result['id'],'summary':result['validation_summary'],
         'tracking_status':result['target_tracking']['status'],'lost_at':result['target_tracking']['lost_at'],
         'auto_role':result.get('automatic_role_estimate'),'role_input':result['role_input'],

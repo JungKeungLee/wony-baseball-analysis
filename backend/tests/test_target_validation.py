@@ -137,6 +137,8 @@ def test_existing_result_routes_not_polluted(client,clip,monkeypatch):
     assert client.get('/api/validation/'+identifier+'/assets/overlay.mp4').status_code==200
     assert client.get('/api/reports').json()['total']==0
     assert client.get('/api/players/wony/history').json()['count']==0
+    listed=client.get('/api/validation/reports').json()['items']
+    assert [i['id'] for i in listed]==[identifier] and listed[0]['source_name']=='black.mp4' and listed[0]['viewpoint']=='first_person'
     assert client.get('/demo/validation/report/'+identifier).status_code==200
     assert client.get('/api/validation/'+identifier+'/assets/private.json').status_code==404
 

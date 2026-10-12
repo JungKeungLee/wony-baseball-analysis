@@ -11,8 +11,8 @@ try{
  const id=page.url().split('/').at(-1);const result=await (await page.request.get(base+'/api/analysis/'+id)).json();
  assert.equal(result.capture_context.camera_angle,'side');assert.equal(result.synthetic_demo,true);assert.equal(result.scouting_report.player_tools.contact.score,null);
  assert.match(await page.locator('#source-badge').textContent(),/DEMO/);
- assert.match(await page.locator('#overview h2').first().textContent(),/BASEBALL SCOUT REPORT/);
- assert.match(await page.locator('#player-tools [data-tool="speed"] .tool-state').textContent(),/데이터 부족/);
+ assert.match(await page.locator('.scout-tools h2').first().textContent(),/BASEBALL SCOUT REPORT/);assert.equal(await page.locator('.scout-tools').isVisible(),true);assert.equal(await page.locator('#player-tools [data-tool="speed"]').isVisible(),false);
+ assert.match(await page.locator('#player-tools [data-tool="speed"] .tool-state').textContent(),/장면이 부족/);
  assert.equal(await page.locator('#player-tools [data-tool="power"] details').evaluate(e=>e.open),false);
  await page.locator('#player-tools [data-tool="power"] details > summary').click();
  assert.match(await page.locator('#player-tools [data-tool="power"] details').textContent(),/confidence/);
@@ -32,10 +32,10 @@ try{
  // UI grouping fixture uses actual computed DEMO reports and signatures; never a player grade.
  const group={...single,...aggregate,entries:cohort.map((analysis,i)=>({analysis,start:i*4,end:i*4+4,source_url:null,timestamp_origin:'clip_relative'}))};
  const last=group.entries.at(-1),legacy={...last.analysis.scouting_report};last.scouting_extension={role_summary:legacy.role_summary};delete legacy.role_summary;delete legacy.player_tools;last.analysis={...last.analysis,scouting_report:legacy};
- await page.route('**/api/reports/'+id,route=>route.fulfill({json:group}));await page.goto(base+'/demo/analysis/'+id);await page.waitForFunction(()=>document.querySelector('#player-tools').children.length===5);
+ await page.route('**/api/reports/'+id,route=>route.fulfill({json:group}));await page.goto(base+'/demo/analysis/'+id);await page.waitForFunction(()=>document.querySelector('#player-tools').children.length===5);await page.locator('#detail-panel > summary').click();
  await page.locator('[data-report-role="batter"]').click();assert.equal(await page.locator('#role-assessments .tool-card').count(),7);
  assert.match(await page.locator('#role-assessments [data-tool="swing_consistency"]').textContent(),/3개의 손 경로/);
- await page.locator('#role-assessments [data-tool="swing_consistency"] details > summary').click();assert.equal(await page.locator('#role-assessments [data-tool="swing_consistency"] .evidence-link').count(),3);
+ await page.locator('#role-detail > details > summary').click();await page.locator('#role-assessments [data-tool="swing_consistency"] details > summary').click();assert.equal(await page.locator('#role-assessments [data-tool="swing_consistency"] .evidence-link').count(),3);
  await page.locator('#role-assessments [data-tool="swing_consistency"] .evidence-link').first().click();assert.equal(await page.locator('#skeleton-view').isVisible(),true);
  await page.unroute('**/api/reports/'+id);
  await page.goto(base+'/demo/broadcast/');await page.locator('#vod-advanced > summary').click();assert.equal(await page.locator('#vod-capture-angle').count(),1);await page.locator('#broadcast-live-tab').click();await page.locator('#live-advanced > summary').click();assert.equal(await page.locator('#live-capture-angle').count(),1);

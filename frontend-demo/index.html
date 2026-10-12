@@ -1,18 +1,23 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/demo/styles.css"><title>WONY 대시보드</title></head><body><header><a class="brand" href="/demo/">WONY · BASEBALL</a><nav class="main-nav" aria-label="메인 메뉴"><a href="/demo/">대시보드</a><a href="/demo/broadcast/">방송 분석</a><a href="/demo/analyses/">분석 기록</a></nav></header><main>
-<section class="hero"><h1>방송 속 야구를 찾아 분석합니다</h1><p class="page-lead">방송을 고르면 야구 구간을 찾아 타격·수비·포수·투수·주루를 살펴보고, 하나의 리포트로 정리합니다.</p></section>
-<div class="start-grid">
- <a class="start-card" href="/demo/broadcast/?tab=live"><span class="mode-badge live">LIVE</span><h2>실시간 방송 분석</h2><p>방송을 감시하다가 야구가 시작되면<br>자동으로 야구 구간을 분석합니다.</p><span class="cta">방송 감시 시작하기 →</span></a>
- <a class="start-card" href="/demo/broadcast/?tab=vod"><span class="mode-badge">VOD</span><h2>과거 방송 분석</h2><p>과거 영상 또는 VOD와 대략적인 시간대를 알려주면<br>야구 구간을 찾아 분석합니다.</p><span class="cta">야구 구간 찾기 →</span></a>
-</div>
-<a class="wony-entry" href="/demo/validation/"><span class="mode-badge">WONY</span><span><b>WONY 직접 지정 분석</b><small>짧은 영상에서 WONY를 직접 골라 그 선수만 따라가며 자세·역할·게임 표시 속도를 확인합니다. (실험 기능)</small></span><span class="cta">시작 →</span></a>
-<div class="example-row"><span>처음이라면 예시 리포트를 열어보세요 (예시 데이터):</span><button class="chip" data-demo-role="batter">타격</button><button class="chip" data-demo-role="defense">수비</button><button class="chip" data-demo-role="catcher">포수</button><button class="chip" data-demo-role="pitcher">투수</button><button class="chip" data-demo-role="baserunning">주루</button><span id="example-status" role="status"></span></div>
-<div class="home-grid">
- <article><h2>최근 분석</h2><div id="recent-records"><p class="empty">불러오는 중…</p></div></article>
- <article><h2>최근 성장</h2><div id="recent-growth"><p class="empty">불러오는 중…</p></div></article>
- <article><h2>최근 리포트</h2><div id="recent-reports"><p class="empty">불러오는 중…</p></div></article>
-</div>
-<details class="advanced" id="quick-advanced"><summary>고급 기능 · 클립 직접 분석</summary><div class="advanced-body">
-<p class="muted">이미 잘라 둔 짧은 야구 클립(최대 60초 · 100 MiB)을 바로 분석합니다. 방송 전체는 위의 방송 분석을 사용하세요.</p>
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/demo/styles.css"><title>WONY 대시보드</title></head><body><header><a class="brand" href="/demo/">WONY · BASEBALL</a><nav class="main-nav" aria-label="메인 메뉴"><a href="/demo/">대시보드</a><a href="/demo/broadcast/">방송 분석</a><a href="/demo/analyses/">분석 기록</a></nav></header><main class="simple-main">
+
+<section class="home-start">
+ <p class="eyebrow">WONY BASEBALL ANALYSIS</p>
+ <h1>WONY 야구 플레이 분석</h1>
+ <p class="page-lead">영상을 올리고 WONY를 고르면, 잘한 점과 개선할 점을 알려드려요.</p>
+ <a id="start-analysis" class="start-button" href="/demo/validation/">WONY 영상 분석 시작</a>
+ <ol class="flow-line"><li>영상 올리기</li><li>WONY 선택</li><li>역할 선택</li><li>분석 시작</li><li>결과 보기</li></ol>
+</section>
+
+<section class="home-history" aria-labelledby="history-title">
+ <div class="section-heading"><h2 id="history-title">지난 분석 보기</h2><a href="/demo/analyses/">전체 기록 →</a></div>
+ <p id="records-notice" class="notice" hidden></p>
+ <div id="recent-analyses" class="history-list"><p class="empty">불러오는 중…</p></div>
+</section>
+
+<a class="home-broadcast" href="/demo/broadcast/"><b>방송 분석</b><span>LIVE 방송이나 지난 방송(VOD)에서 야구 장면을 찾아 분석해요.</span><span class="cta">열기 →</span></a>
+
+<details class="advanced" id="quick-advanced"><summary>개발자용 · 짧은 클립 직접 분석 / 예시 리포트</summary><div class="advanced-body">
+<p class="muted">WONY 지정 없이 짧은 클립(최대 60초 · 100 MiB)을 분석하거나, 화면 확인용 예시(합성) 리포트를 만듭니다. 예시 결과는 실제 WONY 기록과 섞이지 않습니다.</p>
 <div class="player-settings"><label>영상 <input id="quick-video" type="file" accept="video/*"></label><label>역할 <select id="quick-role"><option value="auto">자동</option><option value="batter">타격</option><option value="defense">수비</option><option value="catcher">포수</option><option value="pitcher">투수</option><option value="baserunning">주루</option></select></label><label>선수 ID <input id="quick-player" maxlength="64"></label><label>분석 날짜 <input id="quick-date" type="date"></label><label>비교 조건 <input id="quick-context" maxlength="80" placeholder="예: same-camera"></label><label>송구/투구 팔 <select id="quick-hand"><option value="right">오른팔</option><option value="left">왼팔</option></select></label><label>수비 포지션 <select id="quick-position"><option value="auto">미지정</option><option value="infielder">내야</option><option value="outfielder">외야</option></select></label></div>
 <button id="quick-analyze">클립 분석</button> <button id="quick-demo">선택한 역할로 예시 만들기</button><p id="quick-status" role="status"></p>
 </div></details>
