@@ -6,6 +6,8 @@ function valid(){const file=!!$('validation-file').files[0],ready=file&&metadata
  // 앞 단계를 끝내야 다음 단계가 밝아진다 (표시만 바꾸고 입력은 막지 않는다).
  $('step-select').classList.toggle('locked',!file);$('step-role').classList.toggle('locked',!box);$('step-start').classList.toggle('locked',!yes);
  for(const [id,done] of [['step-file',file],['step-select',!!box&&confirmed],['step-role',!!box&&confirmed]])$(id).classList.toggle('done',done);
+ // 지금 할 단계 하나만 파랗게: 끝나지 않았고 잠기지 않은 첫 단계
+ const steps=['step-file','step-select','step-role','step-start'].map($),current=steps.find(s=>!s.classList.contains('done')&&!s.classList.contains('locked'));for(const s of steps)s.classList.toggle('current',s===current);
  const missing=!file?'1단계: 영상을 먼저 올려주세요.':!ready?'영상 정보를 불러오는 중입니다… 잠시 후에도 이 문구가 보이면 영상을 다시 선택해주세요.':!box?'2단계: 영상을 멈추고 WONY를 네모로 감싸주세요.':!confirmed?'2단계: 고른 선수가 WONY가 맞는지 체크해주세요.':'';
  if(!$('validation-status').dataset.busy)$('validation-status').textContent=missing;}
 $('selection-viewpoint').onchange=valid;

@@ -47,7 +47,8 @@ def test_routes_and_legacy_redirect(client):
     for page in ['/demo/','/demo/broadcast/','/demo/analyses/']:
         response=client.get(page)
         assert response.status_code==200
-        assert '대시보드' in response.text and '분석 기록' in response.text
+        assert all(f'>{label}<' in response.text for label in ['홈', '새 분석', '분석 기록'])
+        assert '<a href="/demo/broadcast/">' not in response.text  # 방송 분석은 상단 메뉴가 아니라 홈의 고급 기능에서 연다
     r=client.get('/demo/live/',follow_redirects=False)
     assert r.status_code==307 and r.headers['location']=='/demo/broadcast/?tab=live'
     assert client.get('/demo/analysis/not-uuid').status_code==422

@@ -22,7 +22,7 @@ function initThree(){
   try{
     renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
     renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
-    renderer.setClearColor(0x0c171d,1);
+    renderer.setClearColor(0x0f1e33,1);
     renderer.domElement.setAttribute('aria-label','추정 3D stick figure');
     container.appendChild(renderer.domElement);
     scene=new THREE.Scene();
@@ -31,10 +31,10 @@ function initThree(){
     controls=new OrbitControls(camera,renderer.domElement);
     controls.target.set(0,.15,0);controls.enableDamping=true;
     controls.minDistance=2;controls.maxDistance=15;
-    scene.add(new THREE.HemisphereLight(0xe1fff3,0x28363d,3));
+    scene.add(new THREE.HemisphereLight(0xeaf3ff,0x22324a,3));
     const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(3,5,4);scene.add(light);
-    const grid=new THREE.GridHelper(8,16,0x36534a,0x1b3434);grid.position.y=-1.5;scene.add(grid);
-    const base=new THREE.Mesh(new THREE.CircleGeometry(1.1,64),new THREE.MeshBasicMaterial({color:0x1b3230,transparent:true,opacity:.6,side:THREE.DoubleSide}));
+    const grid=new THREE.GridHelper(8,16,0x35557f,0x1c3150);grid.position.y=-1.5;scene.add(grid);
+    const base=new THREE.Mesh(new THREE.CircleGeometry(1.1,64),new THREE.MeshBasicMaterial({color:0x1d3a63,transparent:true,opacity:.6,side:THREE.DoubleSide}));
     base.rotation.x=-Math.PI/2;base.position.y=-1.495;scene.add(base);
     const resize=()=>{const w=container.clientWidth,h=container.clientHeight;if(!w||!h)return;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();};
     new ResizeObserver(resize).observe(container);resize();
@@ -56,17 +56,17 @@ function showFigure(frame){
   if(!names.length){$('three-empty').textContent='이 장면은 3D 자세를 만들 수 없어요.';return;}
   for(const [name,coords] of Object.entries(joints)){
     if(!jointMeshes.has(name)){
-      const mesh=new THREE.Mesh(new THREE.SphereGeometry(name==='head'?.09:.04,20,16),new THREE.MeshStandardMaterial({color:name==='head'?0xe2f7e8:0x9ff2d0,roughness:.35}));
+      const mesh=new THREE.Mesh(new THREE.SphereGeometry(name==='head'?.09:.04,20,16),new THREE.MeshStandardMaterial({color:name==='head'?0xeaf3ff:0x8fc3ff,roughness:.35}));
       scene.add(mesh);jointMeshes.set(name,mesh);
     }
     const mesh=jointMeshes.get(name);mesh.position.set(...coords);mesh.visible=true;
     // 3D confidence is capped at 0.35: never turn illustrative joints into warning colors.
-    mesh.material.color.setHex(name==='head'?0xe2f7e8:0x9ff2d0);
+    mesh.material.color.setHex(name==='head'?0xeaf3ff:0x8fc3ff);
   }
   (result.visualization.pose3d.edges||[]).forEach(([a,b],index)=>{
     if(!joints[a]||!joints[b])return;
     if(!boneMeshes[index]){
-      const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.022,.022,1,10),new THREE.MeshStandardMaterial({color:0x6ed8c2,roughness:.4}));
+      const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.022,.022,1,10),new THREE.MeshStandardMaterial({color:0x5aa2f0,roughness:.4}));
       scene.add(mesh);boneMeshes[index]=mesh;
     }
     const start=new THREE.Vector3(...joints[a]),end=new THREE.Vector3(...joints[b]);
@@ -206,6 +206,7 @@ function setMode(mode){
  if(mode==='compare'&&!selectedEntry?.source_url)mode='skeleton';
  currentMode=mode;const compare=mode==='compare',has3d=available3d().length>0;
  document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('selected',b.dataset.mode===mode));
+ $('play-heading').textContent={compare:'원본 + 참고용 3D 비교',skeleton:'2D 자세',original:'원본 영상',pose:'참고용 3D 자세'}[mode];
  $('viewers').classList.toggle('compare',compare);
  $('original-view').hidden=!(mode==='original'||compare);$('skeleton-view').hidden=mode!=='skeleton';
  $('pose-view').hidden=!(mode==='pose'||(compare&&has3d));$('pose-none').hidden=!(compare&&!has3d);$('compare-info').hidden=!compare;
@@ -222,7 +223,7 @@ function openPlay(entry,play,scroll=true){selectedEntry=entry;selectedPlay=play;
  feedback('play-strengths',play?.strengths);feedback('play-weaknesses',play?.weaknesses);feedback('play-coaching',play?.coaching);$('play-strengths').closest('.report-feedback').hidden=!(play?.strengths?.length||play?.weaknesses?.length||play?.coaching?.length);for(const [id,items] of [['play-strengths',play?.strengths],['play-weaknesses',play?.weaknesses],['play-coaching',play?.coaching]])$(id).closest('article').hidden=!items?.length;setMode(entry.source_url?'compare':'skeleton');if(scroll)$('play-detail').scrollIntoView({behavior:'smooth',block:'start'});
 }
 $('original-video').addEventListener('timeupdate',()=>{if(!selectedEntry||!result)return;const t=$('original-video').currentTime;if(t-(selectedEntry.source_start??selectedEntry.start)>=(selectedEntry.end||Infinity)-selectedEntry.start)$('original-video').pause();if(!hasFrameCallback)syncFromOriginal(t);});
-document.querySelectorAll('[data-report-role]').forEach(b=>b.addEventListener('click',()=>selectRole(b.dataset.reportRole)));
+document.querySelectorAll('[data-report-role]').forEach(b=>b.addEventListener('click',()=>{selectRole(b.dataset.reportRole);openFirstPlay();}));
 document.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
 async function renderGrowth(){
  if(bundle.kind==='validation'){$('growth-notice').textContent='실제 영상 기술 검증 결과입니다. 정식 선수 성장 이력에 등록하지 않습니다.';$('growth-report').replaceChildren();return;}
@@ -305,12 +306,14 @@ function renderResultSummary(roles,seconds){
  const validation=bundle.kind==='validation',a=bundle.entries[0]?.analysis||{};
  const known=[...roles].filter(r=>r!=='unknown');
  $('sum-role').textContent=known.length?known.map(r=>roleLabels[r]||r).join(' · '):friendly('unknown');
- $('sum-date').textContent=bundle.analysis_date||'—';
+ $('result-title').firstChild.textContent=known.length===1?`${roleLabels[known[0]]||known[0]} 분석 결과 `:validation?'WONY 분석 결과 ':'분석 결과 ';
+ $('sum-date').textContent=bundle.analysis_date?String(bundle.analysis_date).replace(/^(\d{4})-(\d{2})-(\d{2}).*$/,'$1.$2.$3'):'—';
  const length=validation?a.validation_summary?.metadata?.duration_seconds:seconds;$('sum-time').textContent=length==null?'—':duration(length);
  const lost=validation?a.target_tracking?.lost_at:null,sub=$('sum-status-sub');sub.replaceChildren();
  if(lost!=null){$('sum-status').textContent=friendly('tracking_lost');sub.append(`${lost.toFixed(1)}초부터 분석을 멈췄어요. `);const link=node('a','WONY를 다시 선택해 분석하기 →');link.href='/demo/validation/';sub.append(link);}
  else if(bundle.entries.length&&bundle.entries.every(e=>e.analysis.status==='insufficient_pose')){$('sum-status').textContent=friendly('insufficient_pose');sub.textContent='WONY의 팔·다리가 잘 보이는 장면이 적어서 일부만 볼 수 있어요.';}
  else $('sum-status').textContent='분석 완료';
+ $('result-status').classList.toggle('warn',$('sum-status').textContent!=='분석 완료');
 }
 function openFirstPlay(){
  for(const entry of visibleEntries()){const items=plays(entry);openPlay(entry,items[0]||null,false);return;}
@@ -326,21 +329,20 @@ function hasEvidence(){
 }
 function arrangeResult(growthDone){
  if(!bundle.entries.length)return;
- if(hasEvidence()){arrangeSufficient(growthDone);return;}
+ if(hasEvidence()){arrangeSufficient();return;}
  renderLimited();
 }
-function arrangeSufficient(growthDone){
- // 분석 가능한 결과: PLAYER TOOLS·역할별 요약은 기본 화면으로, 근거 없는 도구 카드는 숨기고 이름만 알린다.
+function arrangeSufficient(){
+ // 분석 가능한 결과: 기본 화면은 확인된 내용 · 잘한 점/개선할 점 · 주요 장면만. PLAYER TOOLS 등 기술 정보는 '상세 분석 보기' 안에 둔다.
  // 근거가 없는 잘한 점/개선할 점 카드는 숨긴다 (feedback()이 빈 목록에 muted 안내 한 줄을 넣는다).
  for(const id of ['report-strengths','report-development'])$(id).closest('article').hidden=!$(id).querySelector('li:not(.muted)');
- const extra=$('analysis-extra');const tools=document.querySelector('.scout-tools');extra.append(tools,$('overview-role-summaries').closest('article'));
+ $('overview').classList.toggle('no-feedback',!$('overview').querySelector('article:not([hidden])'));
+ $('report-found').replaceChildren(...observations().found.map(x=>node('li',x)));$('found-view').hidden=false;
  const empty=[];for(const card of $('player-tools').children){const t=bundle.player_tools?.[card.dataset.tool];const usable=t&&(t.score!=null||['measured','estimated'].includes(t.status));card.hidden=!usable;if(!usable)empty.push(card.querySelector('h3').textContent);}
  if(empty.length)$('player-tools').after(node('p',`${empty.join(' · ')}: 분석할 장면이 부족해 이번에는 표시하지 않았어요.`,'hint tool-note'));
- // 성장 비교는 실제로 비교된 기록이 있을 때만 기본 화면에 둔다.
- Promise.resolve(growthDone).then(()=>{if($('growth-report').querySelector('table'))extra.append($('growth-report').closest('article'));});
 }
-function renderLimited(){
- document.body.classList.add('limited');
+// 저장된 결과에서 확인된 내용 · 어려웠던 이유 · 촬영 팁을 쉬운 문장으로 만든다. 값은 바꾸지 않는다.
+function observations(){
  const a=bundle.entries[0].analysis,validation=bundle.kind==='validation',v=a.validation_summary||{},t=a.target_tracking||{};
  const lost=validation?t.lost_at:null,sampled=v.sampled_frames||a.sampled_frames||0,usable=v.usable_general_pose_frames,detected=v.pose_detected_frames??(a.pose||[]).length;
  const rates=Object.values(v.pose_quality?.joint_detection_rates||{}).map(j=>j.rate);
@@ -363,11 +365,17 @@ function renderLimited(){
  tips.push('머리부터 발끝까지 화면에 들어오게 촬영해주세요','카메라를 조금 더 멀리 두면 전신이 잘 보여요');
  if(rates.some(r=>r<.5))tips.push('WONY의 옆이나 정면이 보이는 각도가 좋아요');
  tips.push('동작 전체가 끊기지 않게 한 번에 촬영해주세요');
- for(const [id,items] of [['limited-found',found],['limited-issues',issues],['limited-tips',tips]])$(id).replaceChildren(...[...new Set(items)].map(x=>node('li',x)));
- $('limited-view').hidden=false;$('overview').hidden=true;$('role-detail').hidden=true;
+ return {found:[...new Set(found)],issues:[...new Set(issues)],tips:[...new Set(tips)],lost};
+}
+function renderLimited(){
+ // 자료가 부족하면 카드 하나에 확인된 내용 · 어려웠던 이유 · 다음 촬영 팁만 간결하게 보여준다.
+ document.body.classList.add('limited');
+ const {found,issues,tips,lost}=observations();
+ for(const [id,items] of [['limited-found',found],['limited-issues',issues],['limited-tips',tips]])$(id).replaceChildren(...items.map(x=>node('li',x)));
+ if(lost!=null){const link=node('a','WONY를 다시 선택해 분석하기 →','reselect');link.href='/demo/validation/';$('limited-view').append(link);}
+ $('limited-view').hidden=false;$('result-status').hidden=true;$('overview').hidden=true;$('role-detail').hidden=true;
  $('sum-status').textContent=lost!=null?friendly('tracking_lost'):'자료 부족';
  if(lost==null)$('sum-status-sub').textContent='능력 평가 전';
- document.querySelector('#play-list').closest('section').querySelector('h2').textContent='영상 보기';
 }
 
 // ---- 원본 + 3D 비교: 원본 영상이 기준 시계(master) ----

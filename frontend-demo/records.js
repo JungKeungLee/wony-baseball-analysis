@@ -2,6 +2,7 @@ const el=id=>document.getElementById(id);
 const roles={batter:'타자',defense:'수비',catcher:'포수',pitcher:'투수',baserunning:'주루',unknown:'역할 확인 불가'};
 const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;};
 const duration=s=>{if(s==null)return '—';s=Math.round(s);if(s<60)return `${s}초`;const m=Math.floor(s/60);return m<60?`${m}분 ${s%60}초`:`${Math.floor(m/60)}시간 ${m%60}분`;};
+const dotDate=d=>d?String(d).replace(/^(\d{4})-(\d{2})-(\d{2}).*$/,'$1.$2.$3'):'날짜 미상';
 const PAGE=30;
 // 출처별로 따로 페이지를 넘긴다. WONY 기록(/api/validation/reports)과 방송·클립 기록(/api/reports)은 서로 다른 저장소다.
 const sources={
@@ -12,20 +13,20 @@ const views={all:['wony','real'],wony:['wony'],real:['real'],demo:['demo']};
 let state={},generation=0;
 
 function wonyRecord(i){
- // 기본 카드에는 날짜·역할·영상 길이·상태만. 추적·역할 출처 같은 기술 정보는 결과 화면의 '상세 분석 보기'에 있다.
- const role=i.role&&i.role!=='unknown'?roles[i.role]||i.role:'역할을 확인하지 못했습니다';
+ // 기본 카드에는 날짜 · 역할 · 영상 길이 · 상태 · 결과 보기만. 추적·역할 출처 같은 기술 정보는 결과 화면의 '상세 분석 보기'에 있다.
+ const role=i.role&&i.role!=='unknown'?roles[i.role]||i.role:'역할 미확인';
  const status=i.tracking_lost_at!=null?'WONY를 잠시 찾지 못했습니다':i.analysis_status==='insufficient_pose'?'분석할 장면이 부족합니다':'분석 완료';
  return {badge:'WONY 영상 분석',cls:'wony',date:i.analysis_date,sort:`${i.analysis_date||''}|1|${i.created_at||''}`,url:i.report_url,warn:status!=='분석 완료',
-  rows:[['역할',role],['영상 길이',duration(i.duration_sec)],['상태',status]]};
+  line:`${role} · ${duration(i.duration_sec)}`,status};
 }
 function reportRecord(i){
  return {badge:i.synthetic_demo?'DEMO 예시':i.kind==='analysis'?'클립 분석':'방송 분석',cls:i.synthetic_demo?'demo':'broadcast',date:i.analysis_date,sort:`${i.analysis_date||''}|0|${i.id}`,url:i.report_url,
-  rows:[['역할',i.roles.filter(r=>r!=='unknown').map(r=>roles[r]||r).join(' · ')||'역할을 확인하지 못했습니다'],['영상 길이',duration(i.analyzed_seconds)],['상태','분석 완료']]};
+  line:`${i.roles.filter(r=>r!=='unknown').map(r=>roles[r]||r).join(' · ')||'역할 미확인'} · ${duration(i.analyzed_seconds)}`,status:'분석 완료'};
 }
 function card(r){
- const c=node('article',null,'recent-card');c.append(node('span',r.badge,'recent-kind kind-'+r.cls),node('h2',r.date||'날짜 미상','record-date'));
- const dl=node('dl');for(const [k,v] of r.rows)dl.append(node('dt',k),node('dd',v,k==='상태'&&r.warn?'warn-text':null));
- const a=node('a','결과 보기 →','result-link');a.href=r.url;c.append(dl,a);return c;
+ const c=node('article',null,'recent-card');c.append(node('span',r.badge,'recent-kind kind-'+r.cls),node('h2',dotDate(r.date),'record-date'),node('p',r.line,'record-line'));
+ const foot=node('div',null,'record-foot'),a=node('a','결과 보기','result-link');a.href=r.url;
+ foot.append(node('span',r.status,'record-status'+(r.warn?' warn-text':'')),a);c.append(foot);return c;
 }
 async function load(reset=false){
  const view=el('records-source').value;

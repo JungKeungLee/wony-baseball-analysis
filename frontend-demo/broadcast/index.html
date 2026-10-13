@@ -1,4 +1,4 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/demo/styles.css"><title>방송 분석</title></head><body><header><a class="brand" href="/demo/">WONY · BASEBALL</a><nav class="main-nav" aria-label="메인 메뉴"><a href="/demo/">대시보드</a><a href="/demo/broadcast/">방송 분석</a><a href="/demo/analyses/">분석 기록</a></nav></header><main><h1>방송 분석</h1><div class="workspace-tabs" role="tablist" aria-label="방송 입력"><button id="broadcast-live-tab" role="tab" aria-selected="false">실시간 방송 (LIVE)</button><button id="broadcast-vod-tab" role="tab" aria-selected="true" class="selected">과거 방송 (VOD)</button></div>
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><link rel="stylesheet" href="/demo/styles.css"><title>방송 분석</title></head><body><header class="site-header"><div class="header-inner"><a class="brand" href="/demo/">WONY BASEBALL</a><button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-nav"><span class="menu-icon" aria-hidden="true"></span><span class="menu-text">메뉴</span></button><nav id="site-nav" class="main-nav" aria-label="사이트 메뉴"><a href="/demo/">홈</a><a href="/demo/validation/"><span class="pc-only">새 분석</span><span class="m-only">새 영상 분석</span></a><a href="/demo/analyses/">분석 기록</a></nav></div></header><main><h1>방송 분석</h1><p class="page-lead">LIVE 방송이나 지난 방송(VOD)에서 야구 장면을 찾아 분석해요.</p><div class="workspace-tabs" role="tablist" aria-label="방송 입력"><button id="broadcast-live-tab" role="tab" aria-selected="false">실시간 방송 (LIVE)</button><button id="broadcast-vod-tab" role="tab" aria-selected="true" class="selected">과거 방송 (VOD)</button></div>
 
 <div id="broadcast-live-panel" hidden><section class="simple-card">
 <h2>실시간 방송 분석</h2><p>방송 주소를 넣고 감시를 시작하세요. 야구가 감지되면 자동으로 분석을 시작합니다.</p>
@@ -22,7 +22,7 @@
 <p>영상을 고르고, 야구가 나온 시간대를 대략 알려주세요. 몰라도 괜찮습니다.</p>
 <div class="field"><span class="field-title">1. 영상</span><div class="radio-row"><label><input type="radio" name="vod-source" value="file" checked> 영상 파일</label><label><input type="radio" name="vod-source" value="url"> VOD URL</label></div>
  <div id="vod-file-box"><input id="broadcast-file" type="file" accept="video/*"><p class="hint">최대 24시간 · 8 GiB</p></div>
- <div id="vod-url-box" hidden><input id="vod-url" type="url" placeholder="https://..." style="width:100%;font-size:15px;padding:12px 14px;background:#0b151c;border:1px solid #32424b;border-radius:8px;color:var(--text)"><p class="notice">직접 MP4 또는 종료된 HLS(m3u8) URL을 지원합니다. SOOP 등 플랫폼 페이지 URL은 아직 지원하지 않습니다.</p></div></div>
+ <div id="vod-url-box" hidden><input id="vod-url" type="url" placeholder="https://..." style="width:100%"><p class="notice">직접 MP4 또는 종료된 HLS(m3u8) URL을 지원합니다. SOOP 등 플랫폼 페이지 URL은 아직 지원하지 않습니다.</p></div></div>
 <div class="field"><span class="field-title">2. 야구 시간</span><div class="radio-row"><label><input type="radio" name="vod-time" value="unknown" checked> 시간을 모름 <small>전체 영상에서 자동 탐색</small></label><label><input type="radio" name="vod-time" value="approx"> 대략적인 시간 알고 있음</label></div>
  <div id="vod-time-box" hidden>
   <div class="radio-row hint-row"><label><input type="radio" name="vod-hint" value="range" checked> 시작 ~ 종료</label><label><input type="radio" name="vod-hint" value="center"> 중심 시간 하나</label></div>
@@ -41,4 +41,4 @@
 <p class="muted">상세 정보: <span id="broadcast-raw">—</span></p>
 <p class="muted">정확한 시간 지정은 사용자 확인 구간, 대략 지정은 시작/끝+여유 또는 중심±탐색 폭 절반, 자동은 전체 저비용 스캔입니다. 기본 색상 단서만으로 야구를 확정하지 않으며, 검토 후보는 분석하지 않으며, 확인된 야구 클립에서 역할을 자동 추정합니다. 업로드 원본은 수정용으로 서버에 남습니다. 정밀 분석은 기본 10초 클립 최대 20개입니다.</p>
 </div></details>
-</section></div></main><script type="module" src="/demo/broadcast.js"></script><script type="module" src="/demo/live.js"></script><script type="module" src="/demo/broadcast-tabs.js"></script></body></html>
+</section></div></main><script type="module" src="/demo/broadcast.js"></script><script type="module" src="/demo/live.js"></script><script type="module" src="/demo/broadcast-tabs.js"></script><script src="/demo/nav.js" defer></script></body></html>

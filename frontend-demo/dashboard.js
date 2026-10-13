@@ -3,6 +3,7 @@ import {recentWony} from '/demo/wony-store.js';
 const el=id=>document.getElementById(id);
 const roleNames={batter:'타자',pitcher:'투수',catcher:'포수',defense:'수비',baserunning:'주루'};
 const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;};
+const dotDate=d=>d?String(d).replace(/^(\d{4})-(\d{2})-(\d{2}).*$/,'$1.$2.$3'):'날짜 미상';
 const duration=s=>{s=Math.round(s||0);if(s<60)return `${s}초`;const m=Math.floor(s/60);return m<60?`${m}분 ${s%60}초`:`${Math.floor(m/60)}시간 ${m%60}분`;};
 async function json(url,options){const r=await fetch(url,options);const data=await r.json();if(!r.ok)throw new Error(typeof data.detail==='string'?data.detail:data.detail?.message||'요청 실패');return data;}
 
@@ -23,7 +24,7 @@ function renderRecent(records){
  if(!records.length){el('recent-analyses').replaceChildren(node('p','아직 분석한 영상이 없어요. 위의 버튼으로 첫 분석을 시작해보세요.','empty'));return;}
  el('recent-analyses').replaceChildren(...records.map(r=>{
   const a=node('a',null,'history-item');a.href=r.url;
-  a.append(node('b',r.date||'날짜 미상'),node('span',r.role&&r.role!=='unknown'?roleNames[r.role]||r.role:'역할 확인 못함'),node('span',r.duration==null?'—':duration(r.duration)),node('span',plainStatus(r),'history-status'+(r.lost_at!=null||r.status==='insufficient_pose'?' warn':'')),node('span','결과 보기 →','history-go'));
+  a.append(node('b',dotDate(r.date)),node('span',r.role&&r.role!=='unknown'?roleNames[r.role]||r.role:'역할 미확인'),node('span',r.duration==null?'—':duration(r.duration)),node('span',plainStatus(r),'history-status'+(r.lost_at!=null||r.status==='insufficient_pose'?' warn':'')),node('span','결과 보기 →','history-go'));
   return a;}));
 }
 loadRecords().then(renderRecent).catch(()=>el('recent-analyses').replaceChildren(node('p','기록을 불러오지 못했습니다.','empty')));

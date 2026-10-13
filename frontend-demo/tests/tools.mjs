@@ -11,6 +11,7 @@ try{
  const id=page.url().split('/').at(-1);const result=await (await page.request.get(base+'/api/analysis/'+id)).json();
  assert.equal(result.capture_context.camera_angle,'side');assert.equal(result.synthetic_demo,true);assert.equal(result.scouting_report.player_tools.contact.score,null);
  assert.match(await page.locator('#source-badge').textContent(),/DEMO/);
+ assert.equal(await page.locator('.scout-tools').isVisible(),false);await page.locator('#detail-panel > summary').click();// PLAYER TOOLS는 '상세 분석 보기' 안에만
  assert.match(await page.locator('.scout-tools h2').first().textContent(),/BASEBALL SCOUT REPORT/);assert.equal(await page.locator('.scout-tools').isVisible(),true);assert.equal(await page.locator('#player-tools [data-tool="speed"]').isVisible(),false);
  assert.match(await page.locator('#player-tools [data-tool="speed"] .tool-state').textContent(),/장면이 부족/);
  assert.equal(await page.locator('#player-tools [data-tool="power"] details').evaluate(e=>e.open),false);

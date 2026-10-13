@@ -1,6 +1,6 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/demo/styles.css"><title>WONY 영상 분석</title></head><body><header><a class="brand" href="/demo/">WONY · ANALYSIS</a><nav class="main-nav"><a href="/demo/">대시보드</a><a href="/demo/broadcast/">방송 분석</a><a href="/demo/analyses/">분석 기록</a></nav></header><main class="simple-main"><h1>WONY 영상 분석</h1>
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><link rel="stylesheet" href="/demo/styles.css"><title>새 영상 분석 · WONY</title></head><body><header class="site-header"><div class="header-inner"><a class="brand" href="/demo/">WONY BASEBALL</a><button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-nav"><span class="menu-icon" aria-hidden="true"></span><span class="menu-text">메뉴</span></button><nav id="site-nav" class="main-nav" aria-label="사이트 메뉴"><a href="/demo/">홈</a><a href="/demo/validation/" aria-current="page"><span class="pc-only">새 분석</span><span class="m-only">새 영상 분석</span></a><a href="/demo/analyses/">분석 기록</a></nav></div></header><main class="simple-main"><h1>새 영상 분석</h1><p class="page-lead">네 단계만 따라 하면 WONY의 플레이를 분석해요.</p>
 <ol class="wizard">
- <li class="step" id="step-file"><h2><span class="step-no">1</span>영상 올리기</h2>
+ <li class="step current" id="step-file"><h2><span class="step-no">1</span>영상 선택</h2>
   <input id="validation-file" class="file-pick" type="file" accept="video/*"><p class="hint">2분 이하의 짧은 영상이 좋아요.</p></li>
  <li class="step locked" id="step-select"><h2><span class="step-no">2</span>WONY 선택</h2>
   <p class="hint">WONY가 잘 보이는 장면에서 영상을 멈추고 버튼을 누른 뒤, 아래 그림에서 WONY를 네모로 감싸주세요.</p>
@@ -14,7 +14,7 @@
   <select id="role-hint" class="role-select"><option value="auto">잘 모르겠어요 (자동으로 추정)</option><option value="batter">타자 · 공을 치는 역할</option><option value="pitcher">투수 · 공을 던지는 역할</option><option value="catcher">포수 · 공을 받는 역할</option><option value="defense">수비 · 공을 잡고 던지는 역할</option><option value="baserunning">주루 · 베이스를 달리는 역할</option></select></li>
  <li class="step locked" id="step-start"><h2><span class="step-no">4</span>분석 시작</h2>
   <button id="validate-target" class="start-button" disabled>분석 시작</button>
-  <p id="validation-status" role="status" class="hint"></p><p class="hint">분석이 끝나면 결과 화면으로 자동으로 이동해요. (5. 결과 보기)</p></li>
+  <p id="validation-status" role="status" class="hint"></p><p class="hint">분석이 끝나면 결과 화면으로 자동으로 이동해요.</p></li>
 </ol>
 <details class="advanced"><summary>고급 설정</summary><div class="advanced-body"><div class="player-settings"><label>자세 분석 여유 영역 <input id="pose-margin" type="number" min="0" max="0.5" step="0.05" value="0.2"> (0.2 = 각 방향 20%)</label><button id="download-selection" disabled>선택 정보 저장 (JSON)</button></div><p class="muted">WONY를 놓치면 다른 선수로 바꾸지 않고 분석을 멈춥니다. 결과는 정식 성장 기록에 넣지 않으며, 3D는 참고용 자세입니다.</p></div></details>
-</main><script type="module" src="/demo/validation/selection.js"></script></body></html>
+</main><script type="module" src="/demo/validation/selection.js"></script><script src="/demo/nav.js" defer></script></body></html>
