@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1B2B52">
+  <title>플레이 · WONY RHYTHM</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22%231976D2%22/%3E%3Crect x=%2210%22 y=%2220%22 width=%2210%22 height=%2224%22 rx=%224%22 fill=%22%23fff%22/%3E%3Crect x=%2227%22 y=%2212%22 width=%2210%22 height=%2240%22 rx=%224%22 fill=%22%23FFC93C%22/%3E%3Crect x=%2244%22 y=%2224%22 width=%2210%22 height=%2216%22 rx=%224%22 fill=%22%23fff%22/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/game.js"></script>
+</head>
+<body class="game-body" data-page="game">
+  <div class="game">
+    <header class="hud">
+      <button type="button" class="hud-btn" id="pauseBtn" aria-label="일시정지 (Esc)" disabled>Ⅱ</button>
+      <div class="hud-song"><strong id="songTitle">WONY RHYTHM</strong><span class="badge" id="diffBadge"></span></div>
+      <div class="hud-life" id="lifeMeter" role="meter" aria-label="LIFE" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+        <span class="hud-label">LIFE <span id="noFailTag" class="nofail-tag" hidden>NO FAIL</span></span>
+        <span class="life-row"><span class="life-bar"><i id="lifeBar"></i></span><strong id="lifeNum">100</strong></span>
+      </div>
+      <div class="hud-score"><span class="hud-label">SCORE</span><strong id="score">0</strong></div>
+      <div class="progress" aria-hidden="true"><i id="progress"></i></div>
+    </header>
+
+    <div class="arena">
+      <!-- 영상이 음악이고 게임 시계다. 영상 OFF 는 화면에서만 숨기고 재생은 계속한다. -->
+      <div class="video-panel" id="videoPanel">
+        <video id="video" playsinline webkit-playsinline preload="metadata" tabindex="-1"
+               disablepictureinpicture disableremoteplayback x-webkit-airplay="deny"
+               controlslist="nodownload noplaybackrate noremoteplayback nofullscreen"></video>
+        <p class="video-msg" id="videoMsg" hidden>영상 준비 중</p>
+      </div>
+      <div class="play-col">
+        <main class="stage" id="stage">
+          <canvas id="field" aria-hidden="true"></canvas>
+          <div class="combo" id="combo" hidden><strong id="comboNum">0</strong><span>COMBO</span></div>
+          <div class="judgement" id="judgement" hidden></div>
+          <div class="countdown" id="countdown" hidden></div>
+          <div class="preview-clock" id="previewClock" hidden></div>
+        </main>
+        <!-- 레인 버튼은 채보의 laneCount(4/6/8)만큼 game.js 가 만든다 -->
+        <div class="touch" id="touch" role="group" aria-label="레인 터치 버튼"></div>
+      </div>
+    </div>
+  </div>
+
+  <section class="overlay" id="readyOverlay" role="dialog" aria-modal="true" aria-labelledby="readyTitle" hidden>
+    <div class="panel">
+      <div class="ready-head">
+        <img class="cover cover-sm" id="readyCover" alt="" hidden>
+        <div>
+          <h2 id="readyTitle">곡 불러오는 중…</h2>
+          <p class="muted" id="readyArtist" style="margin:0"></p>
+        </div>
+      </div>
+      <div class="preview-tools" id="previewTools" hidden>
+        <p class="preview-note">🔍 자동 생성 미리보기 · 기록은 저장되지 않아요</p>
+        <div class="diff-group diff-group-4" id="previewDiffs" role="radiogroup" aria-label="난이도"></div>
+        <label class="switch-row"><input type="checkbox" id="autoplayToggle"> 자동 플레이로 채보 확인</label>
+        <div id="previewStats"><p class="muted" style="margin:0">채보 통계 계산 중…</p></div>
+      </div>
+      <dl class="stat-grid">
+        <div class="stat"><dt>난이도</dt><dd><span class="badge" id="readyDiff"></span></dd></div>
+        <div class="stat"><dt>노트 수</dt><dd id="readyNotes">-</dd></div>
+        <div class="stat"><dt>배속</dt><dd id="readySpeed">1.0x</dd></div>
+        <div class="stat"><dt>최고 점수</dt><dd id="readyBest">0</dd></div>
+      </dl>
+      <p class="status is-error" id="readyProblem" role="status" hidden></p>
+      <p class="muted" style="margin:12px 0 0;font-size:.9rem">키보드 <strong id="keyHint">← ↓ ↑ →</strong> 또는 터치 버튼 · Esc 일시정지 · 영상 <strong id="readyVideo">ON</strong> · NO FAIL <strong id="readyNoFail">OFF</strong></p>
+      <div class="actions">
+        <button type="button" class="btn btn-primary btn-block" id="startBtn" data-autofocus disabled>▶ 게임 시작</button>
+        <div class="actions-row">
+          <a class="btn" id="readyBack" href="/songs">곡 선택</a>
+          <a class="btn" href="/">홈으로</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="overlay" id="pauseOverlay" role="dialog" aria-modal="true" aria-labelledby="pauseTitle" hidden>
+    <div class="panel">
+      <h2 id="pauseTitle">일시정지</h2>
+      <p class="muted" style="margin:0">영상과 노트가 멈췄어요. 계속하면 같은 위치에서 이어집니다.</p>
+      <label class="switch-row"><input type="checkbox" id="videoToggle" checked> 영상 보기</label>
+      <div class="actions">
+        <button type="button" class="btn btn-primary btn-block" id="resumeBtn" data-autofocus>▶ 계속하기</button>
+        <button type="button" class="btn btn-block" id="restartBtn">↺ 처음부터 다시</button>
+        <div class="actions-row">
+          <a class="btn" href="/songs" data-back>곡 선택</a>
+          <a class="btn" href="/">홈으로</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="overlay" id="resultOverlay" role="dialog" aria-modal="true" aria-labelledby="resultTitle" hidden>
+    <div class="panel">
+      <h2 id="resultTitle">CLEAR!</h2>
+      <p class="muted result-meta" id="resMeta"></p>
+      <span class="new-best" id="resNewBest" hidden>🎉 최고 점수 갱신!</span>
+      <span class="new-best is-muted" id="resNoSave" hidden></span>
+      <dl class="stat-grid">
+        <div class="stat is-big is-half is-grade"><dt>최종 등급</dt><dd id="resGrade" data-grade="F">-</dd></div>
+        <div class="stat is-big is-half"><dt>최종 점수</dt><dd id="resScore">0</dd></div>
+        <div class="stat"><dt>최대 콤보</dt><dd id="resCombo">0</dd></div>
+        <div class="stat"><dt>정확도</dt><dd id="resAccuracy">0%</dd></div>
+        <div class="stat"><dt>PERFECT</dt><dd id="resPERFECT">0</dd></div>
+        <div class="stat"><dt>GREAT</dt><dd id="resGREAT">0</dd></div>
+        <div class="stat"><dt>GOOD</dt><dd id="resGOOD">0</dd></div>
+        <div class="stat"><dt>MISS</dt><dd id="resMISS">0</dd></div>
+        <div class="stat"><dt>최종 LIFE</dt><dd id="resLife">0</dd></div>
+        <div class="stat"><dt>최고 점수</dt><dd id="resBest">0</dd></div>
+      </dl>
+      <!-- 결과는 바로 표시, 아래 두 영역만 비동기로 채움: 순위 변화 → 츄르. 실패해도 로컬 기록 · 결과 화면은 그대로 -->
+      <section class="online-box" id="resOnline" hidden aria-live="polite" aria-labelledby="resOnlineTitle">
+        <h3 class="box-title" id="resOnlineTitle">🏆 ONLINE RANKING</h3>
+        <p class="online-status" id="resOnlineStatus"></p>
+        <div class="rank-change" id="resRankChange" hidden>
+          <span class="rank-medal" id="resRankMedal" aria-hidden="true"></span>
+          <strong class="rank-transition" id="resRankTransition"></strong>
+          <span class="rank-delta" id="resRankDelta"></span>
+          <ul class="rank-badges" id="resRankBadges"></ul>
+        </div>
+        <div id="resRanking"></div>
+        <a class="btn btn-soft btn-block" id="resFullRanking" href="/ranking" hidden>전체 랭킹 보기</a>
+      </section>
+      <section class="churu-box" id="resChuru" hidden aria-live="polite">
+        <p class="churu-title" id="resChuruTitle">🐟 클리어 보상</p>
+        <p class="churu-amount" id="resChuruAmount"></p>
+        <p class="churu-balance">보유 츄르 <span id="resChuruFrom">-</span> → <strong id="resChuruTo">-</strong></p>
+        <p class="churu-note" id="resChuruNote"></p>
+      </section>
+      <div class="actions">
+        <button type="button" class="btn btn-primary btn-block" id="retryBtn" data-autofocus>↺ 다시 하기</button>
+        <div class="actions-row result-links">
+          <a class="btn" id="resRankingLink" href="/ranking">🏆 전체 랭킹</a>
+          <a class="btn" href="/shop">🎨 스킨 상점</a>
+          <a class="btn" href="/songs" data-back>곡 선택</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="overlay" id="errorOverlay" role="alertdialog" aria-modal="true" aria-labelledby="errorTitle" hidden>
+    <div class="panel">
+      <h2 id="errorTitle">곡을 불러오지 못했어요</h2>
+      <p class="muted" id="errorMessage"></p>
+      <div class="actions"><a class="btn btn-primary" href="/songs" data-autofocus data-back>곡 선택으로</a></div>
+    </div>
+  </section>
+</body>
+</html>

@@ -1,3 +1,4 @@
+import {requestJson} from '/demo/http.js';
 const $=id=>document.getElementById(id),video=$('selection-video'),canvas=$('selection-canvas'),ctx=canvas.getContext('2d');
 let fileURL=null,start=null,box=null,snapshot=null,sourceTime=0;
 // 영상 크기·길이를 읽기 전에는 분석할 수 없다 (0 / NaN / Infinity 방지).
@@ -32,14 +33,18 @@ $('validate-target').onclick=async()=>{const file=$('validation-file').files[0];
  const r=canvas.getBoundingClientRect();
  console.info('[WONY] validation payload',{file:{name:file.name,size:file.size,type:file.type},duration:video.duration,videoWidth:video.videoWidth,videoHeight:video.videoHeight,
   displayedVideo:[Math.round(video.getBoundingClientRect().width),Math.round(video.getBoundingClientRect().height)],canvasCss:[canvas.clientWidth,canvas.clientHeight],canvasRect:[r.width,r.height],
-  roiBrowserPixels:box,coordinateSystem:'browser natural size (videoWidth×videoHeight, SAR applied); server maps to source pixels',selection:selection()});$('validate-target').disabled=true;$('validation-status').dataset.busy='1';try{const form=new FormData();form.append('video',file);form.append('selection',JSON.stringify(selection()));$('validation-status').textContent='분석 중입니다… 영상 길이에 따라 1~5분 걸릴 수 있어요. 이 창을 닫지 마세요.';const response=await fetch('/api/validation',{method:'POST',body:form});const result=await response.json();if(!response.ok)throw new Error(typeof result.detail==='string'?result.detail:JSON.stringify(result.detail));location.href=result.report_url;}catch(e){delete $('validation-status').dataset.busy;$('validation-status').textContent=friendlyError(e.message);$('validate-target').disabled=false;}};
+  roiBrowserPixels:box,coordinateSystem:'browser natural size (videoWidth×videoHeight, SAR applied); server maps to source pixels',selection:selection()});$('validate-target').disabled=true;$('validation-status').dataset.busy='1';try{const form=new FormData();form.append('video',file);form.append('selection',JSON.stringify(selection()));$('validation-status').textContent='분석 중입니다… 영상 길이에 따라 1~5분 걸릴 수 있어요. 이 창을 닫지 마세요.';const result=await requestJson('/api/validation',{method:'POST',body:form});if(!result.report_url)throw new Error('서버 응답에 결과 주소가 없습니다.');location.href=result.report_url;}catch(e){delete $('validation-status').dataset.busy;$('validation-status').textContent=friendlyError(e.message);$('validate-target').disabled=false;}};
 
 function friendlyError(message){
  const code=(/^\[(\w+)\]/.exec(message)||[])[1];
  const byCode={video_metadata_unreadable:'영상 정보를 불러오지 못했습니다. 영상을 다시 선택해주세요.',video_too_long:'120초 이하 영상만 분석할 수 있습니다.',video_too_large:'128 MiB 이하 영상만 분석할 수 있습니다.',video_empty:'빈 영상입니다. 영상을 다시 선택해주세요.',
   selection_missing:'WONY 영역을 다시 선택해주세요.',selection_out_of_frame:'선택 영역을 확인하지 못했습니다. WONY를 다시 지정해주세요.',selection_size_mismatch:'선택 영역의 기준 크기가 영상과 맞지 않습니다. 영상을 다시 선택한 뒤 WONY를 다시 지정해주세요.',selection_time_out_of_range:'선택한 장면 시간이 영상 길이를 벗어났습니다. 장면을 다시 골라주세요.',
   selection_invalid_json:'선택 정보를 보내지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.',selection_invalid:'선택 정보를 확인하지 못했습니다. WONY를 다시 지정해주세요.',not_confirmed:'고른 선수가 WONY가 맞는지 체크해주세요.',engine_busy:'다른 분석이 진행 중입니다. 잠시 후 다시 시도해주세요.',
-  analysis_input_rejected:'영상을 분석하는 중 입력을 처리하지 못했습니다. 다른 장면에서 WONY를 다시 지정해보세요.'};
- return byCode[code]||`분석하지 못했습니다: ${message}`;
+  analysis_input_rejected:'영상을 분석하는 중 입력을 처리하지 못했습니다. 다른 장면에서 WONY를 다시 지정해보세요.',
+  server_dependency_missing:'서버에 영상 처리 프로그램(ffmpeg 등)이 설치되어 있지 않아 분석할 수 없습니다. 서버 설정을 확인해주세요.',
+  server_out_of_memory:'서버 메모리가 부족해 분석을 끝내지 못했습니다. 더 짧은 영상으로 시도하거나 서버 메모리를 늘려주세요.',
+  internal_error:'서버 내부 오류로 분석하지 못했습니다.',auth_required:'로그인이 필요하거나 세션이 만료됐습니다. WONY PHONE에서 다시 열어주세요.'};
+ // 알려진 코드는 쉬운 문장 + 원문, 그 외에는 서버가 보낸 실제 메시지를 그대로 보여준다.
+ return byCode[code]?(code==='internal_error'?`${byCode[code]} (${message})`:byCode[code]):`분석하지 못했습니다: ${message}`;
 }
 valid();

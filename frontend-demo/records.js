@@ -1,3 +1,4 @@
+import {requestJson} from '/demo/http.js';
 const el=id=>document.getElementById(id);
 const roles={batter:'타자',defense:'수비',catcher:'포수',pitcher:'투수',baserunning:'주루',unknown:'역할 확인 불가'};
 const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;};
@@ -39,8 +40,7 @@ async function load(reset=false){
   const batch=[];
   for(const [key,s] of Object.entries(active)){
    if(s.total!=null&&s.offset>=s.total)continue;
-   const response=await fetch(sources[key].url(s.offset));if(!response.ok)throw new Error('기록 조회 실패');
-   const data=await response.json();if(mine!==generation)return;s.total=data.total;s.offset+=data.items.length;s.skipped=data.skipped||0;batch.push(...data.items.map(sources[key].map));
+   const data=await requestJson(sources[key].url(s.offset));if(mine!==generation)return;s.total=data.total;s.offset+=data.items.length;s.skipped=data.skipped||0;batch.push(...data.items.map(sources[key].map));
   }
   if(mine!==generation)return;
   batch.sort((a,b)=>b.sort.localeCompare(a.sort));el('records-list').append(...batch.map(card));

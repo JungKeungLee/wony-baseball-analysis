@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#F3F8FF">
+  <title>곡 선택 · WONY RHYTHM</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22%231976D2%22/%3E%3Crect x=%2210%22 y=%2220%22 width=%2210%22 height=%2224%22 rx=%224%22 fill=%22%23fff%22/%3E%3Crect x=%2227%22 y=%2212%22 width=%2210%22 height=%2240%22 rx=%224%22 fill=%22%23FFC93C%22/%3E%3Crect x=%2244%22 y=%2224%22 width=%2210%22 height=%2216%22 rx=%224%22 fill=%22%23fff%22/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/songs.js"></script>
+</head>
+<body data-page="songs">
+  <main class="page stack">
+    <header class="topbar">
+      <a class="icon-link" href="/" aria-label="홈으로">←</a>
+      <h1>곡 선택</h1>
+    </header>
+    <p class="status" id="status" role="status">곡 목록을 불러오는 중…</p>
+    <div class="song-list" id="songList"></div>
+
+    <section class="card setup" id="setup" aria-labelledby="setupTitle" hidden>
+      <h2 id="setupTitle"></h2>
+      <fieldset class="setup-step">
+        <legend><span>1</span>난이도</legend>
+        <div class="diff-group" id="diffGroup"></div>
+      </fieldset>
+      <fieldset class="setup-step">
+        <legend><span>2</span>노트 배속 <small class="muted" style="font-weight:500">(영상·음악 속도는 그대로)</small></legend>
+        <div class="diff-group speed-group" id="speedGroup"></div>
+      </fieldset>
+      <fieldset class="setup-step">
+        <legend><span>3</span>영상 / 옵션</legend>
+        <label class="switch-row"><input type="checkbox" id="videoOn" checked><span>영상 보기<small class="muted" style="display:block;font-weight:500">OFF 여도 음악은 그대로 나와요</small></span></label>
+        <label class="switch-row"><input type="checkbox" id="noFail"><span>NO FAIL<small class="muted" style="display:block;font-weight:500">LIFE 가 0 이 되어도 곡 끝까지 플레이</small></span></label>
+      </fieldset>
+      <p class="status is-error" id="setupProblem" role="status" hidden></p>
+      <a class="btn btn-primary btn-block" id="playBtn" href="/game">▶ 게임 시작</a>
+      <!-- 온라인 랭킹: 펼칠 때만 서버에 요청 -->
+      <details class="ranking-panel" id="rankingPanel" hidden>
+        <summary>🏆 온라인 랭킹 <span id="rankingLabel"></span></summary>
+        <div id="rankingBody"></div>
+      </details>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,11 +1,12 @@
 import {addCaptureForm,appendCapture} from '/demo/capture.js';
+import {requestJson} from '/demo/http.js';
 const el=id=>document.getElementById(id);
 let job=null,pollTimer=null,sourceURL=null;
 const roleNames={batter:'타격',defense:'수비',catcher:'포수',pitcher:'투수',baserunning:'주루',unknown:'역할 미확인'};
 const clock=n=>{n=Math.floor(n);return `${String(Math.floor(n/3600)).padStart(2,'0')}:${String(Math.floor(n/60)%60).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;};
 const length=s=>s<60?`${Math.round(s)}초`:`${Math.floor(s/60)}분${Math.round(s%60)?` ${Math.round(s%60)}초`:''}`;
 const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;};
-const request=async(url,options)=>{const r=await fetch(url,options);const data=await r.json();if(!r.ok)throw new Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail));return data;};
+const request=requestJson;
 const running=data=>['queued','running'].includes(data.status);
 
 // 기본 화면의 선택지(영상/시간)를 고급 설정의 실제 API 값과 동기화한다.

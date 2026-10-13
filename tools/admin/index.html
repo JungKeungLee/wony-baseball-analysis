@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>곡 추가 · WONY RHYTHM</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22%231976D2%22/%3E%3Crect x=%2210%22 y=%2220%22 width=%2210%22 height=%2224%22 rx=%224%22 fill=%22%23fff%22/%3E%3Crect x=%2227%22 y=%2212%22 width=%2210%22 height=%2240%22 rx=%224%22 fill=%22%23FFC93C%22/%3E%3Crect x=%2244%22 y=%2224%22 width=%2210%22 height=%2216%22 rx=%224%22 fill=%22%23fff%22/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+    .steps li { padding: 8px 12px; border-radius: 12px; background: var(--bg); border: 1px solid var(--border); color: var(--muted); }
+    .steps li.is-done { color: var(--text); }
+    .steps li.is-done::before { content: "✓ "; color: #11704F; font-weight: 800; }
+    .steps li.is-active { border-color: var(--main); color: var(--main-dark); font-weight: 700; }
+    .steps li.is-active::before { content: "… "; }
+    .file-input { min-height: 48px; padding: 10px; border: 1px dashed var(--border); border-radius: 12px; background: var(--bg); width: 100%; font: inherit; }
+    .text-input { min-height: 48px; padding: 0 12px; border: 1px solid var(--border); border-radius: 12px; width: 100%; font: inherit; }
+    .counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .counts div { text-align: center; padding: 8px 4px; border-radius: 12px; background: var(--bg); border: 1px solid var(--border); }
+    .counts strong { display: block; font-size: 1.2rem; }
+    .stage-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .stage-row img { width: 96px; height: 54px; object-fit: cover; border-radius: 10px; background: var(--sub); }
+    .stage-row .grow { flex: 1; min-width: 160px; }
+    .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .page { max-width: 760px; }
+  </style>
+</head>
+<body data-page="admin">
+  <main class="page stack">
+    <header class="topbar"><h1>곡 추가 <span class="badge">로컬 전용</span></h1></header>
+
+    <form class="card stack" id="form">
+      <div class="field">
+        <label for="video">MP4 파일 (영상 + 음악)</label>
+        <input class="file-input" type="file" id="video" name="video" accept="video/mp4,video/*" required>
+      </div>
+      <div class="field">
+        <label for="title">곡 제목</label>
+        <input class="text-input" type="text" id="title" name="title" required maxlength="80" placeholder="예: 여름이야 부탁해">
+      </div>
+      <details>
+        <summary>선택 사항 (가수 / cover 이미지)</summary>
+        <div class="stack" style="margin-top:12px">
+          <div class="field"><label for="artist">가수</label><input class="text-input" type="text" id="artist" name="artist" value="WONY"></div>
+          <div class="field"><label for="cover">cover 이미지 (비우면 영상에서 자동 추출)</label><input class="file-input" type="file" id="cover" name="cover" accept="image/*"></div>
+        </div>
+      </details>
+      <button class="btn btn-primary btn-block" id="submit" type="submit">자동 생성</button>
+      <p class="status" id="formStatus" role="status" aria-live="polite"></p>
+    </form>
+
+    <section class="card stack" id="progressCard" hidden aria-labelledby="progressTitle">
+      <h2 id="progressTitle" style="margin:0;font-size:1.05rem">자동 생성 중</h2>
+      <ol class="steps" id="steps"></ol>
+    </section>
+
+    <section class="card stack" aria-labelledby="pendingTitle">
+      <h2 id="pendingTitle" style="margin:0;font-size:1.05rem">미리보기 대기 (아직 등록 안 됨)</h2>
+      <div class="stack" id="stages"><p class="muted" style="margin:0">없음</p></div>
+    </section>
+
+    <section class="card stack" aria-labelledby="songsTitle">
+      <h2 id="songsTitle" style="margin:0;font-size:1.05rem">등록된 곡</h2>
+      <div class="stack" id="songs"></div>
+      <p class="muted" style="margin:0;font-size:.85rem">삭제: <code>python tools/remove_song.py 곡ID</code> · 저장 후 git 커밋/배포해야 Render 사이트에 나타납니다.</p>
+    </section>
+  </main>
+
+  <script type="module">
+    import { DIFFICULTIES, DIFFICULTY_LABELS } from '/js/config.js';
+    import { loadChartStats, renderStatsTable } from '/js/preview-stats.js';
+    const $ = id => document.getElementById(id);
+    const STEPS = ['업로드', '영상 정보 확인', '영상 저장 준비', '대표 이미지 추출', '오디오 분석', '채보 생성', '검증', '완료'];
+
+    function say(el, text, kind = '') { el.textContent = text; el.className = `status ${kind ? 'is-' + kind : ''}`; }
+    async function api(url, opts) {
+      const res = await fetch(url, opts);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || `요청 실패 (${res.status})`);
+      return body;
+    }
+
+    function renderSteps(current) {
+      const idx = Math.max(0, STEPS.indexOf(current));
+      $('steps').replaceChildren(...STEPS.map((s, i) => {
+        const li = document.createElement('li');
+        li.textContent = s;
+        li.className = i < idx || current === '완료' ? 'is-done' : i === idx ? 'is-active' : '';
+        return li;
+      }));
+    }
+
+    async function loadStages() {
+      const stages = await api('/api/stages');
+      if (!stages.length) { $('stages').innerHTML = '<p class="muted" style="margin:0">없음</p>'; return; }
+      $('stages').replaceChildren(...stages.map(m => {
+        const card = document.createElement('div');
+        card.className = 'stack';
+        const a = m.analysis || {};
+        card.innerHTML = `<div class="stage-row"><img src="/staging/${m.stageId}/cover.webp" alt="">
+          <div class="grow"><strong></strong><div class="muted" style="font-size:.88rem"></div></div></div>`;
+        card.querySelector('strong').textContent = `${m.title} · ${m.artist}`;
+        card.querySelector('.muted').textContent =
+          `${m.songId} · ${(m.durationMs / 1000).toFixed(1)}s · BPM ${a.bpm} · 음악 ${(a.musicStartMs / 1000).toFixed(2)}s 부터`
+          + (m.warnings?.length ? ` · ⚠ ${m.warnings.join(', ')}` : '');
+        const actions = document.createElement('div');
+        actions.className = 'row-actions';
+        const preview = Object.assign(document.createElement('a'), { className: 'btn btn-soft', href: `/game?preview=${m.stageId}&diff=easy`, target: '_blank', textContent: '▶ 미리보기' });
+        const save = Object.assign(document.createElement('button'), { className: 'btn btn-primary', type: 'button', textContent: '저장 (곡 등록)' });
+        const drop = Object.assign(document.createElement('button'), { className: 'btn btn-danger', type: 'button', textContent: '취소' });
+        const st = Object.assign(document.createElement('p'), { className: 'status', role: 'status' });
+        save.onclick = async () => {
+          save.disabled = drop.disabled = true;
+          try { const e = await api(`/api/stages/${m.stageId}/commit`, { method: 'POST' }); say(st, `등록 완료: ${e.id}`, 'ok'); refresh(); }
+          catch (err) { say(st, err.message, 'error'); save.disabled = drop.disabled = false; }
+        };
+        drop.onclick = async () => {
+          if (!confirm('이 미리보기를 지울까요? (원본 MP4 는 그대로입니다)')) return;
+          await api(`/api/stages/${m.stageId}/discard`, { method: 'POST' }).catch(() => {});
+          refresh();
+        };
+        actions.append(preview, save, drop);
+        const stats = document.createElement('div');
+        stats.textContent = '채보 통계 계산 중…';
+        loadChartStats(Object.fromEntries(DIFFICULTIES.map(d => [d, `/staging/${m.stageId}/charts/${d}.json`])))
+          .then(s => stats.replaceChildren(renderStatsTable(s, { ...a, durationMs: m.durationMs })));
+        card.append(stats, actions, st);
+        return card;
+      }));
+    }
+
+    async function loadSongs() {
+      const { songs } = await api('/api/songs');
+      $('songs').replaceChildren(...(songs.length ? songs.map(s => {
+        const row = document.createElement('div');
+        row.className = 'stage-row';
+        row.innerHTML = `<img alt=""><div class="grow"><strong></strong><div class="muted" style="font-size:.88rem"></div></div>`;
+        if (s.cover) row.querySelector('img').src = s.cover; else row.querySelector('img').remove();
+        row.querySelector('strong').textContent = s.title;
+        row.querySelector('.muted').textContent = `${s.id} · ${s.artist} · ` + DIFFICULTIES.map(d => `${DIFFICULTY_LABELS[d]} ${s.noteCounts?.[d] ?? '-'}`).join(' / ');
+        const play = Object.assign(document.createElement('a'), { className: 'btn', href: `/game?song=${encodeURIComponent(s.id)}`, target: '_blank', textContent: '플레이' });
+        row.append(play);
+        return row;
+      }) : [Object.assign(document.createElement('p'), { className: 'muted', textContent: '아직 없습니다.' })]));
+    }
+
+    function refresh() { loadStages().catch(() => {}); loadSongs().catch(() => {}); }
+
+    $('form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const data = new FormData($('form'));
+      if (!$('cover').files.length) data.delete('cover');
+      $('submit').disabled = true;
+      $('progressCard').hidden = false;
+      renderSteps('업로드');
+      say($('formStatus'), 'MP4 업로드 중…');
+      try {
+        const { job } = await api('/api/import', { method: 'POST', body: data });
+        say($('formStatus'), '');
+        for (;;) {
+          await new Promise(r => setTimeout(r, 700));
+          const s = await api(`/api/import/${job}`);
+          renderSteps(s.step);
+          if (s.status === 'ready') { say($('formStatus'), '미리보기 준비 완료. 아래에서 확인 후 저장하세요.', 'ok'); break; }
+          if (s.status === 'failed') { say($('formStatus'), s.error, 'error'); $('progressCard').hidden = true; break; }
+        }
+        $('form').reset();
+      } catch (err) {
+        say($('formStatus'), err.message, 'error');
+        $('progressCard').hidden = true;
+      } finally {
+        $('submit').disabled = false;
+        refresh();
+      }
+    });
+
+    refresh();
+  </script>
+</body>
+</html>

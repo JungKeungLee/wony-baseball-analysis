@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from '/demo/vendor/OrbitControls.js';
 import { saveWony } from '/demo/wony-store.js';
+import {requestJson} from '/demo/http.js';
 
 const $ = id => document.getElementById(id);
 const video = $('overlay');
@@ -230,7 +231,7 @@ async function renderGrowth(){
  const rows=[],withheld=new Set(),histories=new Map();
  for(const entry of bundle.entries){const r=entry.analysis;if(!r.player_id)continue;
   try{const url=`/api/players/${encodeURIComponent(r.player_id)}/history?source=${r.synthetic_demo?'demo':'real'}`;
-   if(!histories.has(url)){const response=await fetch(url);histories.set(url,response.ok?await response.json():null);}
+   if(!histories.has(url)){histories.set(url,await requestJson(url).catch(()=>null));}
    const point=histories.get(url)?.points.find(p=>p.analysis_id===r.id);if(!point)continue;
    if(!point.comparison_compatible){if(point.previous_analysis_id)withheld.add(point.comparison_reason||'촬영 조건 확인 필요');continue;}
    const changes=Object.entries(point.tool_changes||{}).flatMap(([tool,items])=>Object.entries(items).map(([key,m])=>[`${tool.toUpperCase()} · ${labelFor(key)}`,m]));
@@ -245,7 +246,7 @@ async function renderGrowth(){
  else{const table=node('table',null,'growth-table'),header=node('tr');['날짜','역할','항목','이번 관측값','이전 대비'].forEach(x=>header.append(node('th',x)));table.append(header);rows.forEach(values=>{const tr=node('tr');values.forEach(v=>tr.append(node('td',v)));table.append(tr);});const wrap=node('div',null,'growth-scroll');wrap.append(table);target.append(wrap);}
  if(withheld.size){const detail=node('details',null,'tech');detail.append(node('summary','비교를 보류한 기록 · 상세 조건'));for(const reason of withheld)detail.append(node('p',reason));target.append(detail);}
 }
-async function loadReport(){try{const id=location.pathname.split('/').filter(Boolean).at(-1);const response=await fetch(`${location.pathname.startsWith('/demo/validation/report/')?'/api/validation/':'/api/reports/'}${encodeURIComponent(id)}`);if(!response.ok)throw new Error('분석 리포트를 찾을 수 없습니다.');bundle=await response.json();const roles=new Set(bundle.entries.map(e=>e.analysis.role));document.querySelectorAll('[data-report-role]').forEach(b=>{if(b.dataset.reportRole==='all')return;b.disabled=!roles.has(b.dataset.reportRole);b.title=b.disabled?'분석 기록 없음':'';});
+async function loadReport(){try{const id=location.pathname.split('/').filter(Boolean).at(-1);bundle=await requestJson(`${location.pathname.startsWith('/demo/validation/report/')?'/api/validation/':'/api/reports/'}${encodeURIComponent(id)}`).catch(e=>{throw e.status===404||e.status===422?new Error('분석 리포트를 찾을 수 없습니다.'):e;});const roles=new Set(bundle.entries.map(e=>e.analysis.role));document.querySelectorAll('[data-report-role]').forEach(b=>{if(b.dataset.reportRole==='all')return;b.disabled=!roles.has(b.dataset.reportRole);b.title=b.disabled?'분석 기록 없음':'';});
  const summaries=bundle.entries.map(e=>e.analysis.scouting_report?.overall_summary||'스카우팅 요약 미보관');const roleWords={batting:'타격',defense:'수비',catching:'포수',pitching:'투수',baserunning:'주루'};$('report-summary').textContent=[...new Set(summaries)].join(' ').replace(/\b(batting|defense|catching|pitching|baserunning)\b/g,w=>roleWords[w]);
  const segments=bundle.segments?.map(s=>`${hhmmss(s.start)} ~ ${hhmmss(s.end??s.last_signal??s.start)}`).join(', ');const coverage=bundle.entries.reduce((sum,e)=>sum+Math.max(0,(e.end||e.start)-e.start),0);
  $('report-meta').textContent=`분석 날짜 ${bundle.analysis_date||'미보관'} · ${segments?'야구 후보 구간 '+segments:'단일 분석 클립'} · 실제 처리 ${coverage.toFixed(1)}초 / ${bundle.entries.length}클립 · 역할 ${[...roles].map(r=>roleLabels[r]||r).join(' · ')}`;

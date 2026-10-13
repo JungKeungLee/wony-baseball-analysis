@@ -76,8 +76,20 @@ async def validate_target(video:UploadFile=File(...),selection:str=Form(...,max_
         shutil.rmtree(root()/identifier,ignore_errors=True)
         logger.exception('validation input rejected by the runner')
         reject('analysis_input_rejected',f'{type(exc).__name__}: {exc}')
+    except HTTPException:
+        shutil.rmtree(root()/identifier,ignore_errors=True)
+        raise
+    except FileNotFoundError as exc:  # ffmpeg/ffprobe가 서버에 없을 때 (배포 환경)
+        shutil.rmtree(root()/identifier,ignore_errors=True)
+        logger.exception('validation failed: missing file or external tool')
+        reject('server_dependency_missing',f'Missing on the server: {exc.filename or exc}',503)
+    except MemoryError:
+        shutil.rmtree(root()/identifier,ignore_errors=True)
+        logger.exception('validation failed: out of memory')
+        reject('server_out_of_memory','The server ran out of memory during analysis',503)
     except Exception:
         shutil.rmtree(root()/identifier,ignore_errors=True)
+        logger.exception('validation failed unexpectedly')
         raise
     finally:path.unlink(missing_ok=True);await video.close();processing_lock.release()
 

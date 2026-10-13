@@ -23,3 +23,7 @@ test-results/
 .aws/
 .DS_Store
 Thumbs.db
+
+# WONY RHYTHM 곡 자동 생성 도구 (미리보기 임시 파일, 잠금)
+.import-staging/
+songs.json.lock

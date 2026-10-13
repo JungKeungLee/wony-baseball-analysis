@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#F3F8FF">
+  <title>설정 · WONY RHYTHM</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22%231976D2%22/%3E%3Crect x=%2210%22 y=%2220%22 width=%2210%22 height=%2224%22 rx=%224%22 fill=%22%23fff%22/%3E%3Crect x=%2227%22 y=%2212%22 width=%2210%22 height=%2240%22 rx=%224%22 fill=%22%23FFC93C%22/%3E%3Crect x=%2244%22 y=%2224%22 width=%2210%22 height=%2216%22 rx=%224%22 fill=%22%23fff%22/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/settings.js"></script>
+</head>
+<body data-page="settings">
+  <main class="page">
+    <header class="topbar">
+      <a class="icon-link" href="/" aria-label="홈으로">←</a>
+      <h1>설정</h1>
+    </header>
+
+    <div class="stack">
+      <section class="card" aria-labelledby="keysTitle">
+        <h2 id="keysTitle" style="margin:0 0 4px;font-size:1.05rem">레인 키</h2>
+        <p class="muted" style="margin:0 0 8px;font-size:.9rem">버튼을 누른 뒤 원하는 키를 누르세요. Esc는 취소입니다.</p>
+        <div id="keyRows"></div>
+        <p class="status" id="keyStatus" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="card stack" aria-labelledby="playTitle">
+        <h2 id="playTitle" style="margin:0;font-size:1.05rem">플레이</h2>
+        <fieldset class="setup-step">
+          <legend>노트 배속 <small class="muted" style="font-weight:500">(영상·음악 속도는 그대로, 판정 시점도 같음)</small></legend>
+          <div class="diff-group speed-group" id="speedGroup"></div>
+        </fieldset>
+        <label class="switch-row"><input type="checkbox" id="showVideo"> 게임 중 영상 보기</label>
+        <label class="switch-row"><input type="checkbox" id="noFail"><span>NO FAIL<small class="muted" style="display:block;font-weight:500">LIFE 가 0 이 되어도 GAME OVER 없이 곡 끝까지</small></span></label>
+        <div class="field">
+          <label for="offset">판정 보정 <span class="muted" style="font-weight:500">(소리가 늦게 들리면 +)</span></label>
+          <div class="field-row"><input type="range" id="offset"><output id="offsetOut" for="offset"></output></div>
+        </div>
+        <div class="field">
+          <label for="touchMode">터치 버튼</label>
+          <select id="touchMode">
+            <option value="auto">자동 (터치 기기에서만)</option>
+            <option value="on">항상 표시</option>
+            <option value="off">숨김</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- 스킨: 화면 색만 바뀜 (판정 · 점수 · 타이밍과 무관). 지금은 기본 스킨만 -->
+      <section class="card skin-equip" aria-labelledby="skinTitle">
+        <h2 id="skinTitle" style="margin:0;font-size:1.05rem">스킨</h2>
+        <div class="field">
+          <label for="uiSkin">UI 스킨</label>
+          <select id="uiSkin"></select>
+        </div>
+        <div class="field">
+          <label for="rhythmSkin">리듬 바 스킨</label>
+          <select id="rhythmSkin"></select>
+        </div>
+        <p class="status" id="skinStatus" role="status" aria-live="polite"></p>
+        <a class="btn btn-soft" href="/shop">🎨 스킨 상점 (준비 중)</a>
+      </section>
+
+      <button type="button" class="btn btn-block btn-danger" id="resetBtn">기본값으로 초기화</button>
+      <a class="btn btn-primary btn-block" href="/songs">곡 선택으로</a>
+    </div>
+  </main>
+</body>
+</html>

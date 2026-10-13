@@ -1,0 +1,12 @@
+{
+  "name": "wony-rhythm-sql-tests",
+  "private": true,
+  "type": "module",
+  "description": "Supabase SQL(테이블·RLS·함수·rollback)를 실제 Postgres(PGlite)로 검증. 운영 DB 에 접속하지 않음",
+  "scripts": {
+    "test": "node --test \"*.test.mjs\""
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8"
+  }
+}

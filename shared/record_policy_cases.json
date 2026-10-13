@@ -1,0 +1,18 @@
+{
+  "_comment": "WONY RHYTHM 기록 정책 (게임 JS · Render 서버 · Supabase SQL 이 같은 규칙인지 세 곳의 테스트가 이 파일로 확인). bestRecord = 최고 기록 갱신, recent = 최근 기록(로컬/온라인 play_records), ranking = 온라인 랭킹 대상, sendOnline = 서버로 결과 전송",
+  "cases": [
+    { "name": "정상 CLEAR",                       "status": "CLEAR",         "noFail": false, "autoplay": false, "preview": false, "expect": { "bestRecord": true,  "recent": true,  "ranking": true,  "sendOnline": true } },
+    { "name": "GAME_OVER",                        "status": "GAME_OVER",     "noFail": false, "autoplay": false, "preview": false, "expect": { "bestRecord": false, "recent": true,  "ranking": false, "sendOnline": true } },
+    { "name": "NO FAIL 사용 + LIFE 0 이후 완료",   "status": "NO_FAIL_CLEAR", "noFail": true,  "autoplay": false, "preview": false, "expect": { "bestRecord": false, "recent": true,  "ranking": false, "sendOnline": true } },
+    { "name": "NO FAIL 사용 + LIFE 남음 (CLEAR)", "status": "CLEAR",         "noFail": true,  "autoplay": false, "preview": false, "expect": { "bestRecord": false, "recent": true,  "ranking": false, "sendOnline": true } },
+    { "name": "AUTO (CLEAR)",                     "status": "CLEAR",         "noFail": false, "autoplay": true,  "preview": false, "expect": { "bestRecord": false, "recent": false, "ranking": false, "sendOnline": false } },
+    { "name": "PREVIEW (CLEAR)",                  "status": "CLEAR",         "noFail": false, "autoplay": false, "preview": true,  "expect": { "bestRecord": false, "recent": false, "ranking": false, "sendOnline": false } },
+    { "name": "AUTO + GAME_OVER",                 "status": "GAME_OVER",     "noFail": false, "autoplay": true,  "preview": false, "expect": { "bestRecord": false, "recent": false, "ranking": false, "sendOnline": false } }
+  ],
+  "gradeBoundaries": [
+    [100, "CLEAR", "S+"], [98, "CLEAR", "S+"], [97.99, "CLEAR", "S"], [95, "CLEAR", "S"], [94.99, "CLEAR", "A"],
+    [90, "CLEAR", "A"], [89.99, "CLEAR", "B"], [80, "CLEAR", "B"], [79.99, "CLEAR", "C"], [70, "CLEAR", "C"],
+    [69.99, "CLEAR", "D"], [60, "CLEAR", "D"], [59.99, "CLEAR", "F"], [0, "CLEAR", "F"],
+    [100, "GAME_OVER", "F"], [75, "NO_FAIL_CLEAR", "C"]
+  ]
+}

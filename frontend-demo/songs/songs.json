@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "songs": [
+    {
+      "id": "demo-beat",
+      "title": "테스트 비트",
+      "artist": "WONY RHYTHM",
+      "cover": "/assets/covers/demo-beat.webp",
+      "video": "/assets/videos/demo-beat.mp4",
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard",
+        "hell"
+      ],
+      "durationMs": 42000,
+      "bpm": 123.8,
+      "musicStartMs": 3996,
+      "noteCounts": {
+        "easy": 55,
+        "normal": 80,
+        "hard": 167,
+        "hell": 182
+      },
+      "generated": true,
+      "addedAt": "2026-10-13T15:36:34+00:00"
+    },
+    {
+      "id": "wony-cover-01",
+      "title": "WONY 커버 01 (검증용)",
+      "artist": "WONY",
+      "cover": "/assets/covers/wony-cover-01.webp",
+      "video": "/assets/videos/wony-cover-01.mp4",
+      "difficulties": [
+        "easy",
+        "normal",
+        "hard",
+        "hell"
+      ],
+      "durationMs": 228530,
+      "bpm": 129.0,
+      "musicStartMs": 7041,
+      "noteCounts": {
+        "easy": 340,
+        "normal": 848,
+        "hard": 1375,
+        "hell": 1573
+      },
+      "generated": true,
+      "addedAt": "2026-10-13T17:19:37+00:00"
+    }
+  ]
+}

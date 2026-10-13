@@ -1,11 +1,12 @@
 import {addCaptureForm,appendCapture} from '/demo/capture.js';
 import {recentWony} from '/demo/wony-store.js';
+import {requestJson} from '/demo/http.js';
 const el=id=>document.getElementById(id);
 const roleNames={batter:'타자',pitcher:'투수',catcher:'포수',defense:'수비',baserunning:'주루'};
 const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;};
 const dotDate=d=>d?String(d).replace(/^(\d{4})-(\d{2})-(\d{2}).*$/,'$1.$2.$3'):'날짜 미상';
 const duration=s=>{s=Math.round(s||0);if(s<60)return `${s}초`;const m=Math.floor(s/60);return m<60?`${m}분 ${s%60}초`:`${Math.floor(m/60)}시간 ${m%60}분`;};
-async function json(url,options){const r=await fetch(url,options);const data=await r.json();if(!r.ok)throw new Error(typeof data.detail==='string'?data.detail:data.detail?.message||'요청 실패');return data;}
+const json=requestJson;
 
 
 async function submit(demo){const role=el('quick-role').value;el('quick-analyze').disabled=true;el('quick-demo').disabled=true;try{if(demo&&role==='auto')throw new Error('예시를 만들려면 역할을 하나 고르세요.');const form=new FormData();for(const [id,key] of [['quick-player','player_id'],['quick-date','analysis_date'],['quick-context','comparison_context']])if(el(id).value.trim())form.append(key,el(id).value.trim());appendCapture(form,'quick-capture',{identity:false});if(!demo){const file=el('quick-video').files[0];if(!file)throw new Error('영상을 선택하세요.');form.append('video',file);form.append('role',role);form.append('throwing_hand',el('quick-hand').value);form.append('position_type',el('quick-position').value);}el('quick-status').textContent='분석 중입니다…';const data=await json(demo?`/api/demo/${role}`:'/api/analyze',{method:'POST',body:form});location.href=`/demo/analysis/${data.id}`;}catch(e){el('quick-status').textContent=e.message;}finally{el('quick-analyze').disabled=false;el('quick-demo').disabled=false;}}

@@ -1,22 +1,61 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><link rel="stylesheet" href="/demo/styles.css"><title>WONY 야구 분석</title></head><body><header class="site-header"><div class="header-inner"><a class="brand" href="/demo/">WONY BASEBALL</a><button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-nav"><span class="menu-icon" aria-hidden="true"></span><span class="menu-text">메뉴</span></button><nav id="site-nav" class="main-nav" aria-label="사이트 메뉴"><a href="/demo/" aria-current="page">홈</a><a href="/demo/validation/"><span class="pc-only">새 분석</span><span class="m-only">새 영상 분석</span></a><a href="/demo/analyses/">분석 기록</a></nav></div></header><main class="simple-main">
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#F3F8FF">
+  <meta name="description" content="리듬에 맞춰 눌러보는 가벼운 4레인 리듬게임">
+  <title>WONY RHYTHM</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22%231976D2%22/%3E%3Crect x=%2210%22 y=%2220%22 width=%2210%22 height=%2224%22 rx=%224%22 fill=%22%23fff%22/%3E%3Crect x=%2227%22 y=%2212%22 width=%2210%22 height=%2240%22 rx=%224%22 fill=%22%23FFC93C%22/%3E%3Crect x=%2244%22 y=%2224%22 width=%2210%22 height=%2216%22 rx=%224%22 fill=%22%23fff%22/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/home.js"></script>
+</head>
+<body data-page="home">
+  <main class="page">
+    <div class="wallet-bar"><span class="wallet-badge" id="walletBadge" hidden>🐟 츄르 0</span></div>
+    <header class="home-hero">
+      <div class="logo-notes" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <h1 class="logo">WONY <span>RHYTHM</span></h1>
+      <p class="tagline">리듬에 맞춰 눌러보세요 🎵</p>
+    </header>
 
-<section class="home-start card">
- <h1>WONY 야구 분석</h1>
- <p class="page-lead">WONY의 VR 야구 영상을 분석합니다.</p>
- <a id="start-analysis" class="start-button" href="/demo/validation/">새 영상 분석</a>
-</section>
+    <!-- WONY PHONE 회원 로그인 상태 (온라인 기록 · 랭킹). 온라인 기능이 꺼져 있으면 숨김 -->
+    <section class="card online-card" id="onlineCard" hidden aria-live="polite">
+      <p class="online-text" id="onlineText"></p>
+      <div class="online-actions">
+        <a class="btn btn-soft" id="loginLink" hidden>WONY PHONE에서 로그인</a>
+        <button type="button" class="btn" id="logoutBtn" hidden>로그아웃</button>
+      </div>
+    </section>
 
-<section class="home-history" aria-labelledby="history-title">
- <div class="section-heading"><h2 id="history-title">최근 분석</h2><a href="/demo/analyses/">전체 기록 →</a></div>
- <p id="records-notice" class="notice" hidden></p>
- <div id="recent-analyses" class="history-list"><p class="empty">불러오는 중…</p></div>
-</section>
+    <nav class="menu" aria-label="메인 메뉴">
+      <a class="menu-item is-primary" id="playLink" href="/songs">
+        <span class="menu-icon" aria-hidden="true">▶</span>
+        <span>게임 시작<small id="playHint">곡 선택</small></span>
+      </a>
+      <a class="menu-item" href="/songs">
+        <span class="menu-icon" aria-hidden="true">🎵</span>
+        <span>곡 선택<small>곡과 난이도 고르기</small></span>
+      </a>
+      <a class="menu-item" href="/ranking">
+        <span class="menu-icon" aria-hidden="true">🏆</span>
+        <span>랭킹<small>곡·난이도별 온라인 순위</small></span>
+      </a>
+      <a class="menu-item" href="/shop">
+        <span class="menu-icon" aria-hidden="true">🎨</span>
+        <span>스킨 상점<small>준비 중</small></span>
+      </a>
+      <a class="menu-item" href="/scores">
+        <span class="menu-icon" aria-hidden="true">📈</span>
+        <span>최고 기록<small>이 기기의 곡·난이도별 기록</small></span>
+      </a>
+      <a class="menu-item" href="/settings">
+        <span class="menu-icon" aria-hidden="true">⚙️</span>
+        <span>설정<small id="keysHint">← ↓ ↑ →</small></span>
+      </a>
+    </nav>
 
-<section class="home-extra" aria-labelledby="extra-title"><h2 id="extra-title">고급 기능</h2><a class="home-broadcast" href="/demo/broadcast/">긴 방송·VOD에서 야구 구간 찾기 →</a></section>
-
-<details class="advanced" id="quick-advanced"><summary>개발자용 · 짧은 클립 직접 분석 / 예시 리포트</summary><div class="advanced-body">
-<p class="muted">WONY 지정 없이 짧은 클립(최대 60초 · 100 MiB)을 분석하거나, 화면 확인용 예시(합성) 리포트를 만듭니다. 예시 결과는 실제 WONY 기록과 섞이지 않습니다.</p>
-<div class="player-settings"><label>영상 <input id="quick-video" type="file" accept="video/*"></label><label>역할 <select id="quick-role"><option value="auto">자동</option><option value="batter">타격</option><option value="defense">수비</option><option value="catcher">포수</option><option value="pitcher">투수</option><option value="baserunning">주루</option></select></label><label>선수 ID <input id="quick-player" maxlength="64"></label><label>분석 날짜 <input id="quick-date" type="date"></label><label>비교 조건 <input id="quick-context" maxlength="80" placeholder="예: same-camera"></label><label>송구/투구 팔 <select id="quick-hand"><option value="right">오른팔</option><option value="left">왼팔</option></select></label><label>수비 포지션 <select id="quick-position"><option value="auto">미지정</option><option value="infielder">내야</option><option value="outfielder">외야</option></select></label></div>
-<button id="quick-analyze">클립 분석</button> <button id="quick-demo">선택한 역할로 예시 만들기</button><p id="quick-status" role="status"></p>
-</div></details>
-</main><script type="module" src="/demo/dashboard.js"></script><script src="/demo/nav.js" defer></script></body></html>
+    <p class="footer-note">PC는 키보드, 모바일은 화면 아래 버튼으로 플레이해요.</p>
+  </main>
+</body>
+</html>

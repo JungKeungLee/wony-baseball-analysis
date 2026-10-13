@@ -1,10 +1,11 @@
 import {addCaptureForm,appendCapture} from '/demo/capture.js';
+import {requestJson} from '/demo/http.js';
 const el=id=>document.getElementById(id);let id=null,timer=null;
 const roleNames={batter:'타격',defense:'수비',catcher:'포수',pitcher:'투수',baserunning:'주루',unknown:'역할 미확인'};
 const stateNames={IDLE:'대기 중',WATCHING:'방송 감시 중',BASEBALL_CANDIDATE:'야구 장면 확인 중',BASEBALL_ANALYZING:'야구 분석 중',BASEBALL_ENDING:'야구 종료 확인 중',REPORT_GENERATING:'리포트 정리 중'};
 const clock=t=>{t=Math.floor(t);return [Math.floor(t/3600),Math.floor(t/60)%60,t%60].map(n=>String(n).padStart(2,'0')).join(':');};
 const localTime=iso=>{const d=new Date(iso);return isNaN(d)?iso:d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});};
-async function request(url,options){const r=await fetch(url,options);const data=await r.json();if(!r.ok)throw new Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail));return data;}
+const request=requestJson;
 function render(data){
  const live=data.status==='running';
  // 사용자용 요약

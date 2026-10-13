@@ -116,7 +116,7 @@ def install(app):
                 sub = verify_ticket(request.query_params.get('ticket', ''), secret)
             except (ValueError, TypeError, json.JSONDecodeError):
                 return _deny(request, 'invalid_ticket')
-            response = RedirectResponse('/demo/', status_code=303)
+            response = RedirectResponse('/', status_code=303)
             secure = request.url.scheme == 'https' or request.headers.get('x-forwarded-proto') == 'https'
             response.set_cookie(COOKIE, make_session(sub, secret), max_age=SESSION_SECONDS, httponly=True,
                                 samesite='lax', secure=secure, path='/')
