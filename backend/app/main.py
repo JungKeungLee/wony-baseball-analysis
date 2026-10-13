@@ -6,6 +6,9 @@ from pathlib import Path
 from app.api.routes import router
 
 app = FastAPI(title="WONY Baseball Analysis", version="0.4.0")
+# WONY PHONE admin-only entry (enabled when WONY_AUTH_SECRET is set; see app/auth/wony_link.py)
+from app.auth.wony_link import install as install_wony_gate
+install_wony_gate(app)
 app.include_router(router, prefix="/api")
 from app.api.broadcasts import router as broadcast_router
 app.include_router(broadcast_router, prefix="/api")
