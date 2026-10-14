@@ -3,6 +3,9 @@ import { loadCatalog, findSong, pickDifficulty } from './catalog.js';
 import { keyLabel } from './keys.js';
 import { loadLastSelection, loadSettings } from './storage.js';
 import { requireMember } from './session.js';
+import { installButtonSound } from './audio.js';
+import { renderWony } from './wony.js';
+import { WONY_LINES, pickLine } from './wony-lines.js';
 import { applyUiSkin } from './theme.js';
 import { renderWalletBadge, walletView } from './wallet.js';
 
@@ -32,14 +35,20 @@ const LOGIN_MESSAGES = {
 const loginResult = new URLSearchParams(location.search).get('login');
 if (loginResult) history.replaceState(null, '', location.pathname); // 주소창 정리
 
+installButtonSound(() => loadSettings());
+
 requireMember().then(online => {   // 로그인 필수 (세션이 만료됐으면 로그인 안내로)
+  if (online.loggedIn) renderWony(document.getElementById('homeWony'), pickLine(WONY_LINES.home, { name: online.nickname }));
   renderWalletBadge(document.getElementById('walletBadge'), walletView(online));
   const card = document.getElementById('onlineCard');
   const text = document.getElementById('onlineText');
   if (!online.loggedIn) return;   // requireMember 가 로그인 안내로 보냄
   card.hidden = false;
   text.textContent = LOGIN_MESSAGES[loginResult]
-    || `${online.nickname || 'WONY PHONE 회원'}님, 플레이 기록이 온라인 랭킹에 저장돼요.`;
+    || (online.onlineEnabled
+      ? `${online.nickname || 'WONY PHONE 회원'}님, 플레이 기록이 온라인 랭킹에 저장돼요.`
+      : `${online.nickname || 'WONY PHONE 회원'}님, 지금은 서버 설정 문제로 기록 · 랭킹 · 츄르가 저장되지 않아요. (관리자 확인 중)`);
+  card.classList.toggle('is-warning', !online.onlineEnabled);
   const out = document.getElementById('logoutBtn');
   out.hidden = false;
   out.addEventListener('click', async () => {

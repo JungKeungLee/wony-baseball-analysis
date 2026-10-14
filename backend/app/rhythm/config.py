@@ -49,6 +49,20 @@ class RhythmConfig:
     def online_enabled(self):
         return self.login_enabled and len(self.db_secret) >= MIN_SECRET and bool(self.supabase_url) and bool(self.publishable_key)
 
+    @property
+    def online_issues(self):
+        """온라인 기록이 꺼진 이유 = 빠졌거나 잘못된 환경변수 이름 (값은 넣지 않음)"""
+        issues = []
+        if not self.login_enabled:
+            issues.append('RHYTHM_LINK_SECRET')
+        if len(self.db_secret) < MIN_SECRET:
+            issues.append('RHYTHM_DB_SECRET')
+        if not self.supabase_url:
+            issues.append('SUPABASE_URL')
+        if not self.publishable_key:
+            issues.append('SUPABASE_PUBLISHABLE_KEY')
+        return issues
+
 
 def load_config(env=None):
     env = os.environ if env is None else env

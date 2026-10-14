@@ -109,7 +109,7 @@ test('loadRanking: 곡 + 난이도 + 레인 수 조회, 실패해도 빈 목록'
 
 test('getOnlineStatus: 로그인 상태, 서버에 닿지 않으면 온라인 꺼짐으로', async () => {
   fakeServer(() => ({ body: { loggedIn: true, nickname: '워니팬', onlineEnabled: true, loginUrl: null } }));
-  assert.deepEqual(await getOnlineStatus(), { loggedIn: true, nickname: '워니팬', onlineEnabled: true, loginUrl: null, churuBalance: null });
+  assert.deepEqual(await getOnlineStatus(), { loggedIn: true, nickname: '워니팬', onlineEnabled: true, loginUrl: null, onlineIssue: null, churuBalance: null });
   fakeServer(() => ({ body: { loggedIn: true, nickname: '워니팬', onlineEnabled: true, loginUrl: null, churuBalance: 26 } }));
   assert.equal((await getOnlineStatus()).churuBalance, 26);
   for (const bad of [-1, 1.5, '26', true]) {
@@ -139,4 +139,16 @@ test('세션 만료(401): 같은 판을 다시 보내지 않음 (중복 저장 �
   fakeServer(() => ({ status: 401, body: { ok: false, error: 'login_required' } }));
   assert.deepEqual(await submitRanking(clearRecord(), {}, { retryDelayMs: 0 }), { submitted: false, reason: 'login-required' });
   assert.equal(calls.length, 1);
+});
+
+test('저장 실패 원인 구분: 서버 설정 없음(503 not_configured) / 서버 ↔ DB 연결 불일치(503 misconfigured) / DB 거절(400)', async () => {
+  fakeServer(() => ({ status: 503, body: { ok: false, error: 'not_configured' } }));
+  assert.equal((await submitRanking(clearRecord(), {}, { retryDelayMs: 0 })).reason, 'not-configured');
+  fakeServer(() => ({ status: 503, body: { ok: false, error: 'misconfigured' } }));
+  assert.equal((await submitRanking(clearRecord(), {}, { retryDelayMs: 0 })).reason, 'misconfigured');
+  assert.equal(calls.length, 1, '설정 문제는 다시 보내지 않음');
+  fakeServer(() => ({ status: 400, body: { ok: false, error: 'rejected' } }));
+  assert.equal((await submitRanking(clearRecord(), {}, { retryDelayMs: 0 })).reason, 'rejected');
+  fakeServer(() => ({ body: { loggedIn: true, onlineEnabled: false, onlineIssue: 'server-config' } }));
+  assert.equal((await getOnlineStatus()).onlineIssue, 'server-config');
 });

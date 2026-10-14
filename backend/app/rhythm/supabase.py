@@ -63,6 +63,8 @@ class RhythmDb:
                 log.warning('rhythm db %s: auth/config error (status %s, code %s)', fn, exc.code, code or '-')
                 raise DbError('misconfigured') from None
             if exc.code == 400 or code.startswith(('22', '23')):
+                # 값 거절 (예: 제약 위반 · 008 미적용으로 4x/6x 배속 거절). 메시지에 비밀값은 없음
+                log.warning('rhythm db %s: rejected (code %s) %s', fn, code or '-', message[:160])
                 raise DbError('rejected', message[:200]) from None
             log.warning('rhythm db %s: http %s', fn, exc.code)
             raise DbError('unavailable') from None

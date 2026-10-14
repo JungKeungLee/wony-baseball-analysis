@@ -22,6 +22,9 @@ import { keyLabel } from './keys.js';
 import { approachMs, computeLayout, judgeOffsetFor, normalizeSpeed } from './layout.js';
 import { createRenderer } from './render.js';
 import { keysFor, loadSettings, saveLastSelection, updateSettings } from './storage.js';
+import { applyMediaVolume, installButtonSound, playSfx, sfxStats, unlockSfx } from './audio.js';
+import { renderWony } from './wony.js';
+import { WONY_LINES, pickLine } from './wony-lines.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -120,10 +123,15 @@ function setupLanes(n) {
 const gameTime = () => (clock ? clock.now() - settings.offsetMs : -COUNTDOWN_MS);
 
 /** 키보드·터치·자동 플레이가 모두 이 함수 하나로 판정한다 (판정 기준 = video 시각, 배속과 무관). */
+let sfxSeq = 0;   // 효과음을 이미 낸 판정 (입력 판정은 바로, 자동 MISS 는 HUD 갱신 때)
 function pressLane(lane) {
   if (phase !== 'playing') return;
   const judgement = hitLane(state, lane, gameTime());
-  if (judgement) flashes[lane] = { grade: judgement.grade, at: performance.now() };
+  if (judgement) {
+    flashes[lane] = { grade: judgement.grade, at: performance.now() };
+    sfxSeq = judgement.seq;
+    playSfx(judgement.grade, settings);   // 판정이 끝난 뒤 소리만 (판정 · 시계와 무관)
+  }
 }
 
 // ---------- 화면 크기 (게임 상태와 무관) ----------
@@ -209,6 +217,10 @@ function updateHud(t) {
     }
   }
   const j = state.lastJudgement;
+  if (j && j.seq !== hud.seq && j.seq !== sfxSeq) {   // 놓쳐서 지나간 노트(자동 MISS) 효과음
+    sfxSeq = j.seq;
+    playSfx(j.grade, settings);
+  }
   if (j && j.seq !== hud.seq) {
     hud.seq = j.seq;
     hud.judgementAt = performance.now();
@@ -229,7 +241,8 @@ function updateHud(t) {
     ui.countdown.textContent = countdown;
     ui.countdown.hidden = !countdown;
   }
-  const progress = Math.round(Math.min(1, Math.max(0, t / state.endTime)) * 500) / 500;
+  const total = Number.isFinite(state.endTime) ? state.endTime : (state.notes.at(-1)?.time ?? 1);
+  const progress = Math.round(Math.min(1, Math.max(0, t / total)) * 500) / 500;
   if (progress !== hud.progress) {
     hud.progress = progress;
     ui.progress.style.transform = `scaleX(${progress})`;
@@ -323,6 +336,18 @@ function showOverlay(which) {
 }
 
 // ---------- 시작 / 일시정지 / 결과 ----------
+/**
+ * 게임이 정상 종료(CLEAR · NO FAIL CLEAR)되는 시각 = 실제 영상(음악)의 끝.
+ * 마지막 노트 이후에도 음악이 남아 있으면 끝까지 기다린다 (채보 endMs 는 쓰지 않음: 음악 끝 감지가 이르면 곡이 남은 채로 끝났음).
+ * 엔진(updateGame)은 "모든 노트 판정 && 시간 >= endTime" 일 때 끝내고, 영상 ended 이벤트(clock.ended)도 함께 본다.
+ * 길이를 아직 모르면 Infinity → 영상이 실제로 끝났을 때만 종료. GAME OVER(LIFE 0)는 엔진이 즉시 종료.
+ */
+const MEDIA_END_TOLERANCE_MS = 120;
+function mediaEndTime() {
+  const duration = ui.video.duration * 1000;
+  return Number.isFinite(duration) && duration > 0 ? duration - MEDIA_END_TOLERANCE_MS : Infinity;
+}
+
 /** 반드시 사용자 탭·클릭 안에서 호출 (모바일 자동재생 정책). */
 function begin() {
   if (!chart || !videoReady || !memberReady()) return;   // 로그인 확인 전 · 비로그인은 시작 불가
@@ -330,9 +355,13 @@ function begin() {
   clock?.stop();
   input.releaseAll();
   state = createGame(chart, { difficulty, noFail, laneCount });
-  const duration = ui.video.duration * 1000;
-  if (Number.isFinite(duration) && duration > 0) state.endTime = Math.min(state.endTime, duration);
+  state.endTime = mediaEndTime();   // 정상 종료 = 모든 노트 판정 + 영상(음악) 끝 (채보 endMs 아님)
   clock ||= new VideoClock(ui.video, { allowSeek: false });
+  // 소리 설정: 음악 = 마스터 × 음악/영상 (video.volume), 음소거는 muted (iPhone 도). 효과음은 이 탭 안에서 준비
+  applyMediaVolume(ui.video, settings);
+  clock.muted = settings.muted;
+  unlockSfx(settings);
+  sfxSeq = 0;
   clock.start(COUNTDOWN_MS);
   clock.unlock();
   startGame(state);
@@ -415,6 +444,8 @@ function showResult() {
   $('resNewBest').hidden = true;
   $('resNoSave').textContent = BEST_SKIP_TEXT[skipped] || '';
   $('resNoSave').hidden = !skipped;
+  const wonyKey = context.autoplay || context.preview ? 'autoplay' : record.status;
+  renderWony($('resWony'), pickLine(WONY_LINES.result[wonyKey] || WONY_LINES.result.CLEAR));
   const rankingHref = `/ranking?song=${encodeURIComponent(song.id)}&diff=${difficulty}`;
   $('resRankingLink').href = rankingHref;
   // 1. 결과 패널 → 2. 등급 등장 (CSS transform · opacity, 동작 줄이기면 없음) → 3. 랭킹 → 4. 츄르
@@ -438,6 +469,10 @@ function showResult() {
     reducedMotion: reducedMotion.matches,
     ready: new Promise(r => setTimeout(r, reducedMotion.matches ? 0 : RESULT_REVEAL_MS)),
     isCurrent: () => phase === 'result' && seq === resultSeq, // 다시 하기를 누르면 표시 중단 (저장은 이미 요청됨)
+  }).then(out => {
+    // 순위가 오르거나 처음 랭킹에 들면 워니 말풍선도 바꿈
+    const line = out?.change?.kind === 'up' ? WONY_LINES.result.rankUp : out?.change?.kind === 'first' ? WONY_LINES.result.firstRank : null;
+    if (line && seq === resultSeq) renderWony($('resWony'), pickLine(line));
   }).catch(() => {
     $('resOnlineStatus').textContent = '온라인 기록을 불러오지 못했습니다.';
   });
@@ -541,8 +576,7 @@ function setupVideo() {
   const v = ui.video;
   v.addEventListener('loadedmetadata', () => {
     videoReady = true;
-    const duration = v.duration * 1000;
-    if (state && Number.isFinite(duration)) state.endTime = Math.min(state.endTime, duration);
+    if (state) state.endTime = mediaEndTime();
     if (phase === 'ready') updateReady();
   });
   // iOS 등은 탭 전에는 메타데이터도 안 받을 수 있다: 잠시 뒤에는 시작 버튼을 열어 두고 탭으로 로딩
@@ -564,6 +598,7 @@ function setupVideo() {
     }
     try { navigator.mediaSession.setActionHandler('pause', () => pause()); } catch { /* noop */ }
   }
+  applyMediaVolume(v, settings);
   // 곡 하나만, 메타데이터만 먼저 받는다 (곡 선택 화면에서는 영상을 받지 않음)
   v.preload = 'metadata';
   v.src = song.video;
@@ -592,6 +627,7 @@ $('videoToggle').addEventListener('change', e => {
 });
 
 new ResizeObserver(applyLayout).observe(ui.stage);
+installButtonSound(() => settings);   // 시작 · 일시정지 · 결과 버튼음 (레인 버튼은 판정음)
 
 // 로그인 필수: 서버가 세션 없는 요청엔 이 화면 대신 로그인 안내를 보내고, 여기서 시작 전에 한 번 더 확인한다.
 // 플레이 중에는 확인하지 않는다 (세션이 만료돼도 진행 중인 판은 끝까지, 만료는 결과 저장 때 안내).
@@ -654,9 +690,10 @@ if (autoplay || PREVIEW || params.has('debug')) {
       playbackRate: ui.video.playbackRate, showVideo, noteSpeed, approach, difficulty,
       score: state?.score, combo: state?.combo, maxCombo: state?.maxCombo, judged: state?.judged, total: state?.total,
       counts: state && { ...state.counts }, status: state?.status, endTime: state?.endTime,
+      videoDuration: ui.video.duration * 1000, videoEnded: ui.video.ended, lastNoteTime: state?.notes.at(-1)?.time,
       layout: layout && { width: layout.width, height: layout.height, landscape: layout.landscape, fieldW: layout.fieldW,
         judgeY: layout.judgeY, judgeScreenY: Math.round(ui.stage.getBoundingClientRect().top + layout.judgeY) },
-      lifeMax: state?.lifeMax, healed: state?.healed, laneCount: state?.laneCount, laneMode, touchNarrow,
+      lifeMax: state?.lifeMax, healed: state?.healed, videoVolume: ui.video.volume, videoMuted: ui.video.muted, sfxPlayed: sfxStats.played, laneCount: state?.laneCount, laneMode, touchNarrow,
     }),
     pause, resume,
   };

@@ -9,6 +9,7 @@ import { normalizeSpeed } from './layout.js';
 export const STORAGE_KEYS = Object.freeze({
   settings: 'wony_rhythm_settings',
   last: 'wony_rhythm_last',
+  favorites: 'wony_rhythm_favorites',
   legacyKeys: 'wony_rhythm_keys', // 이전 버전: 키 설정을 따로 저장했었다
 });
 
@@ -97,7 +98,17 @@ export function loadSettings() {
     offsetMs: Number.isFinite(offset) ? Math.round(Math.min(OFFSET_RANGE.max, Math.max(OFFSET_RANGE.min, offset))) : 0,
     touchControls: ['auto', 'on', 'off'].includes(s.touchControls) ? s.touchControls : DEFAULT_SETTINGS.touchControls,
     laneCount: normalizeLaneCount(s.laneCount ?? DEFAULT_SETTINGS.laneCount),
+    masterVolume: volume(s.masterVolume, DEFAULT_SETTINGS.masterVolume),
+    musicVolume: volume(s.musicVolume, DEFAULT_SETTINGS.musicVolume),
+    sfxVolume: volume(s.sfxVolume, DEFAULT_SETTINGS.sfxVolume),
+    muted: typeof s.muted === 'boolean' ? s.muted : DEFAULT_SETTINGS.muted,
   };
+}
+
+/** 볼륨 0~100 정수 (깨진 값은 기본값) */
+function volume(v, fallback) {
+  const n = Number(v);
+  return v !== null && v !== '' && Number.isFinite(n) ? Math.round(Math.min(100, Math.max(0, n))) : fallback;
 }
 
 /** 잘못된 키 조합(중복 등, 어느 모드든)은 저장하지 않고 false 를 돌려준다. */
@@ -122,6 +133,10 @@ export function saveSettings(settings) {
     offsetMs: Math.round(Number(settings.offsetMs) || 0),
     touchControls: settings.touchControls || 'auto',
     laneCount: normalizeLaneCount(settings.laneCount),
+    masterVolume: volume(settings.masterVolume, DEFAULT_SETTINGS.masterVolume),
+    musicVolume: volume(settings.musicVolume, DEFAULT_SETTINGS.musicVolume),
+    sfxVolume: volume(settings.sfxVolume, DEFAULT_SETTINGS.sfxVolume),
+    muted: settings.muted === true,
   };
   const ok = writeJson(STORAGE_KEYS.settings, clean);
   if (ok) remove(STORAGE_KEYS.legacyKeys);
@@ -148,12 +163,35 @@ export function resetSettings() {
 //   wony_rhythm_settings : 키 · 노트 배속 · 영상 ON/OFF · NO FAIL · 판정 보정 · 터치 버튼
 //   wony_rhythm_last     : 마지막으로 고른 곡 · 난이도 (홈의 "게임 시작" 버튼)
 //   wonyRhythm.skins.v1  : 장착 스킨 선택 (화면 모양만. 보유 여부는 서버 기준)
+//   wony_rhythm_favorites: 즐겨찾기 곡 id (개인 UI 편의 기능, 서버 관리 불필요)
 export const LEGACY_MEMBER_KEYS = Object.freeze(['wony_rhythm_scores', 'wony_rhythm_results', 'wonyRhythm.wallet.v1']);
-export const MEMBER_FREE_KEYS = Object.freeze([STORAGE_KEYS.settings, STORAGE_KEYS.last, 'wonyRhythm.skins.v1']);
+export const MEMBER_FREE_KEYS = Object.freeze([STORAGE_KEYS.settings, STORAGE_KEYS.last, 'wonyRhythm.skins.v1', STORAGE_KEYS.favorites]);
 
 /** 이전 버전의 로컬 최고 기록 · 최근 기록 · 비로그인 츄르를 지운다 (설정은 그대로) */
 export function purgeMemberData() {
   for (const key of LEGACY_MEMBER_KEYS) remove(key);
+}
+
+// ---------- 즐겨찾기 (곡 id 목록) ----------
+const SONG_ID = /^[a-z0-9][a-z0-9-]{1,47}$/;
+const MAX_FAVORITES = 500;
+
+export function loadFavorites() {
+  const list = readJson(STORAGE_KEYS.favorites);
+  return Array.isArray(list) ? [...new Set(list.filter(id => typeof id === 'string' && SONG_ID.test(id)))].slice(0, MAX_FAVORITES) : [];
+}
+
+export function isFavorite(songId) {
+  return loadFavorites().includes(songId);
+}
+
+/** 즐겨찾기 켜기/끄기 → 바뀐 뒤 상태 (true = 즐겨찾기) */
+export function toggleFavorite(songId) {
+  if (!SONG_ID.test(songId || '')) return false;
+  const list = loadFavorites();
+  const on = !list.includes(songId);
+  writeJson(STORAGE_KEYS.favorites, on ? [songId, ...list].slice(0, MAX_FAVORITES) : list.filter(id => id !== songId));
+  return on;
 }
 
 /** 마지막으로 고른 곡/난이도 (홈의 "게임 시작" 버튼용) */

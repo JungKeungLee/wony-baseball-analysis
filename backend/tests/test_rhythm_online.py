@@ -143,7 +143,7 @@ def test_login_sets_httponly_session_and_redirects(client):
     assert res.headers['referrer-policy'] == 'no-referrer'
     me = client.get('/api/rhythm/me').json()
     assert me == {'loggedIn': True, 'nickname': '워니팬', 'onlineEnabled': True, 'loginUrl': 'https://phone.example/phone',
-                  'churuBalance': 0}
+                  'churuBalance': 0, 'onlineIssue': None}
 
 
 @pytest.mark.parametrize('bad', [
@@ -525,9 +525,18 @@ def test_check_command_reports_without_printing_secrets(monkeypatch, capsys):
         monkeypatch.setenv(k, v)
     monkeypatch.setattr(check, 'load_local_env_file', lambda: [])
     monkeypatch.setattr(check.RhythmDb, 'ranking', lambda self, *a: [])
+    monkeypatch.setattr(check.RhythmDb, 'wallet', lambda self, *a: 0)
+    monkeypatch.setattr(check.RhythmDb, 'my_records', lambda self, *a: {'best': [], 'recent': []})
     assert check.main() == 0
     out = capsys.readouterr().out
     assert 'OK  Supabase' in out and LINK not in out and DBS not in out and 'sb_publishable_test' not in out
+    assert 'OK  006 rhythm_get_wallet_signed' in out and 'OK  007 rhythm_get_my_records_signed' in out
+
+    def no_func(self, *a):
+        raise DbError('unavailable')
+    monkeypatch.setattr(check.RhythmDb, 'wallet', no_func)
+    assert check.main() == 1, '006 SQL 이 없으면 실패로 알려줌'
+    assert 'NG  006 rhythm_get_wallet_signed' in capsys.readouterr().out
 
     def boom(self, *a):
         raise DbError('misconfigured')
@@ -607,3 +616,41 @@ def test_song_without_lane_mode_is_rejected(client):
 def test_note_speed_list(client, speed, code):
     login(client, sub=str(uuid.uuid4()))
     assert post(client, row(note_speed=speed)).status_code == code
+
+
+# ── 온라인 기록 꺼짐 · 실패 원인 구분 (결과 화면 "준비되지 않음" / "츄르 실패" 진단) ─────────────
+def test_login_without_db_settings_reports_server_config_issue(caplog):
+    """로그인(RHYTHM_LINK_SECRET)은 되는데 DB 설정이 빠진 배포: /me 가 onlineEnabled false + onlineIssue, 서버 로그에 빠진 이름"""
+    app = FastAPI()
+    with caplog.at_level(logging.WARNING):
+        app.include_router(create_router({'RHYTHM_LINK_SECRET': LINK, 'SUPABASE_URL': 'https://example.supabase.co'}, db_factory=FakeDb))
+    assert 'RHYTHM_DB_SECRET' in caplog.text and 'SUPABASE_PUBLISHABLE_KEY' in caplog.text and 'SUPABASE_URL' not in caplog.text
+    assert LINK not in caplog.text
+    c = TestClient(app, base_url='https://testserver', follow_redirects=False)
+    rhythm_auth._used.clear()
+    c.get('/rhythm-login', params={'ticket': ticket()})
+    me = c.get('/api/rhythm/me').json()
+    assert me['loggedIn'] is True and me['onlineEnabled'] is False and me['onlineIssue'] == 'server-config'
+    res = post(c, row())
+    assert res.status_code == 503 and res.json()['error'] == 'not_configured'
+    assert FakeDb.calls == []
+
+
+def test_db_signature_mismatch_is_distinguished_from_missing_config(client):
+    login(client)
+    FakeDb.fail = 'misconfigured'
+    res = post(client, row())
+    assert res.status_code == 503 and res.json()['error'] == 'misconfigured'
+
+
+def test_db_rejection_reason_is_logged_without_secrets(caplog):
+    body = {'code': '23514', 'message': 'new row for relation "rhythm_play_records" violates check constraint "rhythm_play_records_note_speed_check"'}
+
+    def opener(req, timeout):
+        raise urllib.error.HTTPError(req.full_url, 400, 'x', {}, io.BytesIO(json.dumps(body).encode()))
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(DbError) as exc:
+            RhythmDb(load_config(ENV), opener=opener).submit(USER, row(note_speed=4))
+    assert exc.value.kind == 'rejected'
+    assert 'note_speed_check' in caplog.text and DBS not in caplog.text

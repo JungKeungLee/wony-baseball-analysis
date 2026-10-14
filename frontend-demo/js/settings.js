@@ -5,6 +5,7 @@ import { keysFor, loadSettings, resetSettings, saveSettings, withKeysFor } from 
 import { EQUIP_ERRORS, SKIN_TYPES, createLocalSkinRepository, equipSkin, equippedSkins, getSkin, ownedSkinIds } from './skins.js';
 import { requireMember } from './session.js';
 import { applyUiSkin } from './theme.js';
+import { installButtonSound, musicVolumeLocked, playSfx, unlockSfx } from './audio.js';
 
 applyUiSkin();
 requireMember();   // 로그인 필수 (세션이 만료됐으면 로그인 안내로)
@@ -80,7 +81,13 @@ function renderModes() {
   }));
 }
 
+// 마우스 · 터치로 모드를 고르면 포커스를 풀어 둔다: 그대로 두면 방향키(4 KEY 레인 키)가 키 입력 테스트 대신
+// 라디오 선택을 바꿔 버림. 키보드로 고를 때(방향키 이동)는 포커스를 그대로 둔다.
+let pickedByPointer = false;
+modeGroup.addEventListener('pointerdown', () => { pickedByPointer = true; });
 modeGroup.addEventListener('change', e => {
+  if (pickedByPointer) e.target.blur();
+  pickedByPointer = false;
   laneCount = Number(e.target.value);
   listening = -1;
   settings = { ...settings, laneCount };
@@ -88,6 +95,25 @@ modeGroup.addEventListener('change', e => {
   say(`${LANE_MODE_LABELS[laneCount]} 키를 설정해요.`);
   buildRows();
 });
+
+// ---------- 키 입력 테스트: 지금 KEY 모드의 레인 키를 누르면 그 줄이 빛남 (키 변경 중이 아닐 때) ----------
+const typing = el => el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA');
+function laneOfKey(code) {
+  return keysFor(settings, laneCount).indexOf(code);
+}
+document.addEventListener('keydown', e => {
+  if (listening !== -1 || typing(e.target) && e.target.type !== 'checkbox') return;
+  const lane = laneOfKey(e.code);
+  if (lane < 0) return;
+  e.preventDefault();   // 방향키 · Space 로 화면이 움직이지 않게
+  rows.children[lane]?.classList.add('is-hit');
+  if (!e.repeat) playSfx('PERFECT', settings);
+});
+document.addEventListener('keyup', e => {
+  const lane = laneOfKey(e.code);
+  if (lane >= 0) rows.children[lane]?.classList.remove('is-hit');
+});
+addEventListener('blur', () => [...rows.children].forEach(r => r.classList.remove('is-hit')));
 
 document.addEventListener('keydown', e => {
   if (listening === -1 || e.repeat) return;
@@ -158,6 +184,7 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   buildRows();
   stopListening('기본값(4 KEY ← ↓ ↑ →)으로 되돌렸어요.', 'ok');
   renderPlay();
+  renderSound();
 });
 
 // ── 스킨 장착 (보유한 스킨만 목록에. 기본 스킨은 항상 보유) ──
@@ -183,7 +210,41 @@ for (const [type, id] of skinSelects) {
   });
 }
 
+// ---------- 소리 ----------
+const SOUND = [['masterVolume', 'masterVolumeOut'], ['musicVolume', 'musicVolumeOut'], ['sfxVolume', 'sfxVolumeOut']];
+function renderSound() {
+  for (const [id, out] of SOUND) {
+    document.getElementById(id).value = String(settings[id]);
+    document.getElementById(out).textContent = String(settings[id]);
+  }
+  document.getElementById('muted').checked = settings.muted;
+  // iPhone Safari 등: 음악(영상) 볼륨을 웹에서 못 바꿈 → 슬라이더 대신 안내 (음소거는 동작)
+  const locked = musicVolumeLocked();
+  document.getElementById('musicVolumeField').hidden = locked;
+  document.getElementById('musicVolumeLocked').hidden = !locked;
+}
+for (const [id, out] of SOUND) {
+  const input = document.getElementById(id);
+  input.addEventListener('input', () => {
+    document.getElementById(out).textContent = input.value;
+    settings = { ...settings, [id]: Number(input.value) };
+  });
+  input.addEventListener('change', () => {
+    saveSettings(settings);
+    if (id !== 'musicVolume') {   // 효과음 크기 미리 들어보기
+      unlockSfx(settings);
+      playSfx('GREAT', settings);
+    }
+  });
+}
+document.getElementById('muted').addEventListener('change', e => {
+  settings = { ...settings, muted: e.target.checked };
+  saveSettings(settings);
+});
+installButtonSound(() => settings);
+
 renderModes();
 buildRows();
 renderPlay();
+renderSound();
 renderSkins();

@@ -22,7 +22,26 @@
         <p class="muted" style="margin:0 0 8px;font-size:.9rem">KEY 모드를 고른 뒤 버튼을 누르고 원하는 키를 누르세요. Esc는 취소입니다.</p>
         <div class="diff-group key-group" id="keyModeGroup" role="radiogroup" aria-label="KEY 모드"></div>
         <div id="keyRows"></div>
+        <p class="muted key-test-hint" id="keyTestHint">키 입력 테스트: 레인 키를 누르면 해당 줄이 바로 빛나요.</p>
         <p class="status" id="keyStatus" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="card stack" aria-labelledby="soundTitle">
+        <h2 id="soundTitle" style="margin:0;font-size:1.05rem">소리</h2>
+        <div class="field">
+          <label for="masterVolume">마스터 볼륨</label>
+          <div class="field-row"><input type="range" id="masterVolume" min="0" max="100" step="1"><output id="masterVolumeOut" for="masterVolume"></output></div>
+        </div>
+        <div class="field" id="musicVolumeField">
+          <label for="musicVolume">음악 / 영상 볼륨</label>
+          <div class="field-row"><input type="range" id="musicVolume" min="0" max="100" step="1"><output id="musicVolumeOut" for="musicVolume"></output></div>
+        </div>
+        <p class="muted" id="musicVolumeLocked" hidden style="margin:0;font-size:.9rem">🔊 음악 볼륨은 기기 볼륨 버튼으로 조절해주세요.</p>
+        <div class="field">
+          <label for="sfxVolume">효과음 볼륨 <span class="muted" style="font-weight:500">(판정음 · 버튼음)</span></label>
+          <div class="field-row"><input type="range" id="sfxVolume" min="0" max="100" step="1"><output id="sfxVolumeOut" for="sfxVolume"></output></div>
+        </div>
+        <label class="switch-row"><input type="checkbox" id="muted"><span>음소거<small class="muted" style="display:block;font-weight:500">게임 음악 · 미리듣기 · 효과음 모두 끔</small></span></label>
       </section>
 
       <section class="card stack" aria-labelledby="playTitle">

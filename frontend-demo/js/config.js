@@ -105,6 +105,11 @@ export const DEFAULT_SETTINGS = Object.freeze({
   offsetMs: 0,          // 판정 보정: +면 노트가 더 늦게 도착 (블루투스 이어폰 등)
   touchControls: 'auto', // auto | on | off
   laneCount: DEFAULT_LANE_COUNT, // 마지막으로 고른 KEY 모드 (4 / 6 / 8)
+  // 소리 (0~100). 음악 = 마스터 × 음악/영상 → video.volume, 효과음 = 마스터 × 효과음. 음소거면 모두 0
+  masterVolume: 80,
+  musicVolume: 100,
+  sfxVolume: 60,
+  muted: false,
 });
 
 export const OFFSET_RANGE = Object.freeze({ min: -200, max: 200, step: 10 });

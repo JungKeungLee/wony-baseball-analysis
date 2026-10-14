@@ -12,7 +12,7 @@ const A = { id: randomUUID(), nickname: '워니팬A' };
 const B = { id: randomUUID(), nickname: '비공개B', isPublic: false };
 const servers = await startServers({ appPort: 8767, pgPort: 54399, members: [A, B] });
 const { BASE, PHONE_URL, ticket, dbState, setDbFailing } = servers;
-const ALLOWED_STORAGE = ['wony_rhythm_settings', 'wony_rhythm_last', 'wonyRhythm.skins.v1'];
+const ALLOWED_STORAGE = ['wony_rhythm_settings', 'wony_rhythm_last', 'wonyRhythm.skins.v1', 'wony_rhythm_favorites'];
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const results = [];
@@ -139,6 +139,12 @@ await check('같은 판 재전송 (새로고침 · 재시도 흉내): 기록 · 
   await page.waitForFunction(() => /\(S\+\)/.test(document.getElementById('readyBest').textContent));
   const keys = await page.evaluate(() => Object.keys(localStorage));
   assert.ok(keys.every(k => ALLOWED_STORAGE.includes(k)), `localStorage 에는 설정만: ${keys}`);
+  // 곡 선택 화면 개인 BEST: 이 곡 · 난이도 · KEY 모드의 등급 · 점수 · 정확도 (서버 기록)
+  await page.goto(`${BASE}/songs`);
+  await page.locator('.song-card[data-song="demo-beat"]').click();
+  await page.locator('#diffGroup label[data-diff="easy"] small').filter({ hasText: '%' }).waitFor({ timeout: 10000 });
+  assert.match(await page.locator('#diffGroup label[data-diff="easy"] small').textContent(), /^S\+ [\d,]+ · 100\.0%$/);
+  assert.equal(await page.locator('#diffGroup label[data-diff="hard"] small').textContent(), '기록 없음');
 });
 
 await check('GAME_OVER: 온라인 플레이 기록만 (최고 기록 · 랭킹 · 츄르 제외)', async () => {

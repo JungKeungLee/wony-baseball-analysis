@@ -12,7 +12,8 @@ const MEMBER = { id: randomUUID(), nickname: '워니팬' };
 const servers = await startServers({ appPort: 8768, pgPort: 54398, members: [MEMBER] });
 const { BASE, PHONE_URL } = servers;
 // localStorage 에 남아도 되는 것 = 게임 설정만 (js/storage.js MEMBER_FREE_KEYS)
-const ALLOWED_STORAGE = ['wony_rhythm_settings', 'wony_rhythm_last', 'wonyRhythm.skins.v1'];
+const ALLOWED_STORAGE = ['wony_rhythm_settings', 'wony_rhythm_last', 'wonyRhythm.skins.v1', 'wony_rhythm_favorites'];
+const overlap = (a, b) => a && b && a.x < b.x + b.width - 1 && b.x < a.x + a.width - 1 && a.y < b.y + b.height - 1 && b.y < a.y + a.height - 1;
 const storageKeys = page => page.evaluate(() => Object.keys(localStorage).sort());
 const SONG = process.env.WONY_SONG || 'demo-beat';
 const VIEWPORTS = [
@@ -144,6 +145,21 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(await smallTargets(page), []);
     });
   }
+
+  await check('워니 안내 (메인): 이미지 + 말풍선, 메뉴 · 로고 · 츄르를 가리지 않음', async () => {
+    await page.goto(`${BASE}/`);
+    await page.locator('#homeWony:not([hidden]) .wony-bubble').waitFor();
+    assert.ok((await page.locator('#homeWony .wony-bubble').textContent()).length > 3);
+    assert.equal(await page.locator('#homeWony .wony-img').getAttribute('src'), '/assets/wony/wony.png');
+    assert.ok(await page.locator('#homeWony .wony-img').evaluate(img => img.complete && img.naturalWidth > 0), '임시 이미지 로드');
+    const wony = await box(page, '#homeWony');
+    for (const sel of ['.menu', '.logo', '#walletBadge', '#onlineCard']) {
+      const other = await box(page, sel);
+      assert.ok(!overlap(wony, other), `워니가 ${sel} 와 겹침`);
+    }
+    assert.ok(wony.x >= 0 && wony.x + wony.width <= vp.width + 1);
+    assert.ok(await noHorizontalScroll(page));
+  });
 
   await check('메인: 🐟 츄르 + 메뉴 순서 (게임 시작 · 곡 선택 · 랭킹 · 스킨 상점 · 최고 기록 · 설정)', async () => {
     await page.goto(`${BASE}/`);
@@ -525,6 +541,12 @@ for (const vp of VIEWPORTS) {
     assert.ok(await noHorizontalScroll(page));
     const panel = await box(page, '#resultOverlay .panel');
     assert.ok(panel.x >= 0 && panel.x + panel.width <= vp.width + 1, 'result panel inside viewport');
+    // 워니 안내 (결과): 흐름 안에서 결과 · 버튼을 가리지 않음
+    assert.ok(await page.locator('#resWony').isVisible());
+    assert.match(await page.locator('#resWony .wony-bubble').textContent(), /아쉬워요|EASY/);
+    const wony = await box(page, '#resWony');
+    for (const sel of ['#resultOverlay .stat-grid', '#resultOverlay .actions', '#resultTitle']) assert.ok(!overlap(wony, await box(page, sel)), `결과 워니가 ${sel} 와 겹침`);
+    if (vp.mobile && vp.height <= 500) assert.ok(await page.locator('#resWony .wony-img').isHidden(), '낮은 가로 화면은 말풍선만');
     await page.evaluate(() => localStorage.clear());
   });
 
@@ -618,6 +640,176 @@ for (const reduce of [false, true]) {
     });
   }
   await check(`JS console error 없음 (동작 줄이기 ${reduce ? 'ON' : 'OFF'})`, async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
+results.push('\n[소리 · 키 입력 테스트 · 미리듣기 · 즐겨찾기 · BEST (1440 desktop)]');
+{
+  const { context, page, errors } = await newPage(VIEWPORTS[3]);
+  const mp4 = [];
+  page.on('request', r => { if (r.url().endsWith('.mp4')) mp4.push(r.url().replace(BASE, '')); });
+  await check('설정 소리: 마스터 · 음악 · 효과음(기본 60) 슬라이더 + 음소거, 저장 후 새로고침해도 유지', async () => {
+    await page.goto(`${BASE}/settings`);
+    assert.deepEqual(await page.locator('#masterVolume, #musicVolume, #sfxVolume').evaluateAll(els => els.map(e => e.value)), ['80', '100', '60']);
+    for (const id of ['masterVolume', 'musicVolume', 'sfxVolume']) {
+      const b = await box(page, `#${id}`);
+      assert.ok(b.height >= 44 && b.width >= 150, `${id} 슬라이더 크기 ${JSON.stringify(b)}`);
+    }
+    await page.locator('#masterVolume').fill('50');
+    await page.locator('#musicVolume').fill('50');
+    await page.locator('#sfxVolume').fill('30');
+    assert.equal(await page.locator('#masterVolumeOut').textContent(), '50');
+    await page.reload();
+    assert.deepEqual(await page.locator('#masterVolume, #musicVolume, #sfxVolume').evaluateAll(els => els.map(e => e.value)), ['50', '50', '30']);
+    const raw = await page.evaluate(() => JSON.parse(localStorage.getItem('wony_rhythm_settings')));
+    assert.deepEqual([raw.masterVolume, raw.musicVolume, raw.sfxVolume, raw.muted], [50, 50, 30, false]);
+    assert.ok(await page.locator('#musicVolumeField').isVisible());
+    assert.ok(await page.locator('#musicVolumeLocked').isHidden());
+  });
+  await check('게임: 음악 볼륨 = 마스터 × 음악 → video.volume 0.25, 판정 효과음 재생, 판정 그대로', async () => {
+    await startGame(page, 'diff=normal&autoplay=1');
+    await page.waitForFunction(() => window.__wonyRhythm.snapshot().judged >= 8, null, { timeout: 20000 });
+    const s = await snap(page);
+    assert.equal(s.videoVolume, 0.25);
+    assert.equal(s.videoMuted, false);
+    assert.ok(s.sfxPlayed >= 4, `효과음 ${s.sfxPlayed}`);
+    assert.equal(s.counts.PERFECT, s.judged);
+    assert.equal(s.playbackRate, 1);
+    await page.evaluate(() => window.__wonyRhythm.pause());
+  });
+  await check('음소거: 게임 음악 muted · 효과음 없음 (재생 · 시계는 그대로 진행)', async () => {
+    await page.goto(`${BASE}/settings`);
+    await page.locator('#muted').check();
+    await startGame(page, 'diff=normal&autoplay=1');
+    await page.waitForFunction(() => window.__wonyRhythm.snapshot().judged >= 1, null, { timeout: 20000 });
+    const a = await snap(page);
+    await page.waitForFunction(n => window.__wonyRhythm.snapshot().judged >= n + 6, a.judged, { timeout: 20000 });
+    const b = await snap(page);
+    assert.equal(b.videoMuted, true, '카운트다운 뒤 재생 시작 때도 음소거 유지 (clock.js)');
+    assert.equal(b.sfxPlayed, a.sfxPlayed, '음소거면 판정음 없음');
+    assert.equal(b.videoPaused, false);
+    assert.ok(Math.abs(b.time - b.videoTime) <= 60);
+    assert.equal(b.counts.PERFECT, b.judged);
+    await page.evaluate(() => window.__wonyRhythm.pause());
+  });
+  await check('곡 미리듣기: 음소거면 재생 · 다운로드 없이 안내', async () => {
+    await page.goto(`${BASE}/songs`);
+    await page.waitForLoadState('networkidle');
+    mp4.length = 0;
+    await page.locator('[data-preview="demo-beat"]').click();
+    assert.match(await page.locator('#previewNote').textContent(), /음소거 상태예요/);
+    assert.ok(await page.locator('#previewNote').isVisible(), '안내 문구가 있으면 표시');
+    await page.waitForTimeout(500);
+    assert.deepEqual(mp4, [], '음소거면 영상을 받지 않음');
+    await page.goto(`${BASE}/settings`);
+    await page.locator('#muted').uncheck();
+  });
+  await check('곡 미리듣기: 누를 때만 받음, 한 번에 한 곡만, 소리 설정 적용, 다시 누르면 정지', async () => {
+    await page.goto(`${BASE}/songs`);
+    await page.waitForLoadState('networkidle');
+    mp4.length = 0;
+    await page.waitForTimeout(300);
+    assert.deepEqual(mp4, [], '곡 선택 화면만으로는 영상 요청 없음');
+    await page.locator('[data-preview="demo-beat"]').click();
+    await page.waitForFunction(() => { const a = document.getElementById('previewAudio'); return a && !a.paused && a.currentTime > 0.2; }, null, { timeout: 15000 });
+    const a1 = await page.evaluate(() => { const a = document.getElementById('previewAudio'); return { src: a.src, volume: a.volume, muted: a.muted, t: a.currentTime }; });
+    assert.match(a1.src, /demo-beat\.mp4$/);
+    assert.equal(a1.volume, 0.25, '마스터 50 × 음악 50');
+    assert.ok(a1.t >= 12, `미리듣기 시작 위치(곡 30%) ${a1.t}`);
+    assert.equal(await page.locator('[data-preview="demo-beat"]').textContent(), '■');
+    await page.locator('[data-preview="wony-cover-01"]').click();
+    await page.waitForFunction(() => /wony-cover-01\.mp4$/.test(document.getElementById('previewAudio').src));
+    const playing = await page.evaluate(() => [...document.querySelectorAll('audio, video')].filter(m => !m.paused).length);
+    assert.equal(playing, 1, '동시에 한 곡만');
+    assert.equal(await page.locator('[data-preview="demo-beat"]').textContent(), '▶');
+    await page.locator('[data-preview="wony-cover-01"]').click();
+    assert.equal(await page.evaluate(() => document.getElementById('previewAudio').paused), true, '다시 누르면 정지');
+  });
+  await check('곡 선택: 상태 · 미리듣기 안내가 비어 있으면 빈 공간 없음', async () => {
+    await page.goto(`${BASE}/songs`);
+    await page.locator('.song-item').first().waitFor();
+    assert.ok(await page.locator('#status').isHidden() && await page.locator('#previewNote').isHidden());
+    const topbar = await box(page, '.topbar');
+    const tools = await box(page, '.song-tools');
+    // 제목 줄 아래 여백(18px) + 토글 줄 여백만 남음 (빈 상태 줄 24px 이상이 사라짐)
+    assert.ok(tools.y - (topbar.y + topbar.height) <= 32, `제목 아래 바로 즐겨찾기 ${tools.y - (topbar.y + topbar.height)}px`);
+  });
+  await check('즐겨찾기: ☆ → ★, 즐겨찾기 곡이 위로, "즐겨찾기만", 새로고침 후 유지 (wony_rhythm_favorites)', async () => {
+    await page.goto(`${BASE}/songs`);
+    const order = () => page.locator('.song-item').evaluateAll(els => els.map(e => e.dataset.item));
+    assert.deepEqual(await order(), ['demo-beat', 'wony-cover-01']);
+    await page.locator('[data-fav="wony-cover-01"]').click();
+    assert.deepEqual(await order(), ['wony-cover-01', 'demo-beat']);
+    assert.equal(await page.locator('[data-fav="wony-cover-01"]').textContent(), '★');
+    await page.locator('#favOnly').check();
+    assert.deepEqual(await order(), ['wony-cover-01']);
+    await page.reload();
+    assert.deepEqual(await order(), ['wony-cover-01', 'demo-beat']);
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('wony_rhythm_favorites'))), ['wony-cover-01']);
+    const btn = await box(page, '[data-fav="wony-cover-01"]');
+    assert.ok(btn.width >= 44 && btn.height >= 44);
+    const keys = await storageKeys(page);
+    assert.ok(keys.every(k => ALLOWED_STORAGE.includes(k)), `${keys}`);
+  });
+  await check('설정 키 입력 테스트: 레인 키를 누르면 그 줄이 바로 빛나고, 떼면 꺼짐', async () => {
+    await page.goto(`${BASE}/settings`);
+    await page.locator('#keyModeGroup label', { hasText: '6 KEY' }).click();
+    await page.locator('#keyModeGroup label', { hasText: '4 KEY' }).click();   // 마우스로 고른 직후 방향키 → 모드가 바뀌지 않고 테스트
+    await page.keyboard.down('ArrowUp');
+    assert.equal(await page.locator('#keyModeGroup input:checked').getAttribute('value'), '4');
+    assert.deepEqual(await page.locator('#keyRows .key-row').evaluateAll(rows => rows.map(r => r.classList.contains('is-hit'))), [false, false, true, false]);
+    await page.keyboard.up('ArrowUp');
+    assert.equal(await page.locator('#keyRows .key-row.is-hit').count(), 0);
+    await page.locator('#keyModeGroup label', { hasText: '6 KEY' }).click();
+    await page.keyboard.down('KeyL');
+    assert.equal(await page.locator('#keyRows .key-row').nth(5).evaluate(r => r.classList.contains('is-hit')), true);
+    await page.keyboard.up('KeyL');
+    await page.locator('#keyModeGroup label', { hasText: '4 KEY' }).click();
+  });
+  await check('JS console error 없음 (소리 · 미리듣기 · 즐겨찾기)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  // iPhone Safari 처럼 미디어 볼륨을 바꿀 수 없는 브라우저
+  const { context, page, errors } = await newPage(VIEWPORTS[0]);
+  await page.addInitScript(() => {
+    Object.defineProperty(HTMLMediaElement.prototype, 'volume', { get() { return 1; }, set() {}, configurable: true });
+  });
+  await check('볼륨 고정 기기(iPhone): 음악 볼륨 슬라이더 대신 "기기 볼륨 버튼" 안내, 음소거는 동작', async () => {
+    await page.goto(`${BASE}/settings`);
+    assert.ok(await page.locator('#musicVolumeField').isHidden());
+    assert.equal(await page.locator('#musicVolumeLocked').textContent(), '🔊 음악 볼륨은 기기 볼륨 버튼으로 조절해주세요.');
+    assert.ok(await page.locator('#masterVolume').isVisible() && await page.locator('#sfxVolume').isVisible());
+    await page.locator('#muted').check();
+    await startGame(page, 'diff=normal&autoplay=1');
+    await page.waitForFunction(() => window.__wonyRhythm.snapshot().judged >= 3, null, { timeout: 20000 });
+    assert.equal((await snap(page)).videoMuted, true);
+    await page.evaluate(() => window.__wonyRhythm.pause());
+    assert.deepEqual(errors, []);
+  });
+  await context.close();
+}
+
+results.push('\n[곡 끝까지: 정상 CLEAR 는 영상(음악)이 끝난 뒤 결과 (1440 desktop)]');
+{
+  const { context, page, errors } = await newPage(VIEWPORTS[3]);
+  // 실제 문제 재현: 채보 endMs 가 영상 끝보다 훨씬 이름 (wony-cover-01 은 endMs 214,142 / 영상 228,531)
+  const full = await (await fetch(`${BASE}/songs/charts/demo-beat-hard.json`)).json();
+  const short = { ...full, notes: full.notes.filter(n => n.time <= 12000), endMs: 14000 };
+  await page.route('**/songs/charts/demo-beat-hard.json', route => route.fulfill({ json: short }));
+  await check('마지막 노트 · 채보 endMs 가 지나도 영상이 남아 있으면 결과로 넘어가지 않음 → 영상 끝에서 CLEAR', async () => {
+    await startGame(page, 'diff=hard&autoplay=1');
+    await page.waitForFunction(() => { const s = window.__wonyRhythm.snapshot(); return s.judged === s.total && s.time > 16000; }, null, { timeout: 40000 });
+    const mid = await snap(page);
+    assert.equal(mid.phase, 'playing', `모든 노트 판정 + endMs(14000) 이후에도 계속 (${mid.time}ms / 영상 ${mid.videoDuration}ms)`);
+    assert.ok(mid.endTime > 41000 && mid.endTime <= mid.videoDuration, `종료 기준 = 영상 길이 ${mid.endTime}`);
+    await page.locator('#resultOverlay').waitFor({ state: 'visible', timeout: 60000 });
+    const end = await snap(page);
+    assert.equal(end.resultStatus, 'CLEAR');
+    assert.ok(end.videoEnded || end.videoTime >= end.videoDuration - 150, `결과는 영상 끝에서 ${end.videoTime} / ${end.videoDuration}`);
+    assert.equal(end.counts.PERFECT, end.total);
+  });
+  await check('JS console error 없음 (곡 끝)', async () => assert.deepEqual(errors, []));
   await context.close();
 }
 
@@ -797,7 +989,8 @@ for (const lanes of [4, 6, 8]) {
     if (lanes === 8 && portraitPhone) {
       await check(`8 KEY @ ${vp.name}: 버튼이 44px 보다 작아지는 세로 화면은 시작하지 않고 가로 화면 안내`, async () => {
         await page.goto(`${BASE}/game?song=${SONG}&diff=hard&keys=8&debug=1`);
-        await page.locator('#readyProblem:not([hidden])').waitFor();
+        // 채보를 불러오는 동안은 "채보 준비 중" → 불러온 뒤 버튼 폭을 재고 가로 화면 안내
+        await page.waitForFunction(() => /가로 화면으로 돌려주세요/.test(document.getElementById('readyProblem').textContent), null, { timeout: 10000 });
         assert.match(await page.locator('#readyProblem').textContent(), /8 KEY는 이 화면에서 버튼이 너무 작아요\. 가로 화면으로 돌려주세요\./);
         assert.equal(await page.locator('#startBtn').isDisabled(), true);
         await page.setViewportSize({ width: vp.height, height: vp.width });   // 가로로 돌림

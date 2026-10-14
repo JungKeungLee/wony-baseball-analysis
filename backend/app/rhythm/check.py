@@ -30,9 +30,10 @@ def main():
     if not c.online_enabled:
         print('\n온라인 기능 꺼짐: 위 NG 항목을 채우세요. (게임 · 로컬 기록은 정상 동작)')
         return 1
+    probe = str(uuid.uuid4())   # 존재하지 않는 회원: 조회만, 데이터 변경 없음
     try:
-        # 존재하지 않는 회원/곡으로 랭킹 조회 = 서명 · 시간 · 함수 권한만 확인 (데이터 변경 없음)
-        RhythmDb(c).ranking(str(uuid.uuid4()), 'connection-check', 'easy', 4, 1)
+        # 랭킹 조회 = 서명 · 시간 · 함수 권한 확인 (001~005)
+        RhythmDb(c).ranking(probe, 'connection-check', 'easy', 4, 1)
     except DbError as exc:
         hint = {
             'misconfigured': 'RHYTHM_DB_SECRET 이 Supabase(005 SQL) 값과 다르거나, SQL 001~006 이 아직 적용되지 않았거나, 공개 키가 틀립니다.',
@@ -41,7 +42,21 @@ def main():
         }.get(exc.kind, '')
         print(f'\nNG  Supabase 서명 함수 호출 실패 ({exc.kind}). {hint}')
         return 1
-    print('\nOK  Supabase 서명 함수 연결 (rhythm_get_ranking_signed). 온라인 기록 · 랭킹 준비 완료')
+    print('\nOK  Supabase 서명 함수 연결 (rhythm_get_ranking_signed)')
+    # 006 (츄르 지갑) · 007 (내 기록) 함수도 있는지: 없으면 저장 · 츄르 · 최고 기록 화면이 실패
+    missing = []
+    for name, call in [('006 rhythm_get_wallet_signed', lambda: RhythmDb(c).wallet(probe)),
+                       ('007 rhythm_get_my_records_signed', lambda: RhythmDb(c).my_records(probe))]:
+        try:
+            call()
+            print(f'OK  {name}')
+        except DbError as exc:
+            missing.append(name)
+            print(f'NG  {name} ({exc.kind}) → supabase/sql 의 해당 SQL 을 적용하세요')
+    print('참고: 008 (배속 4x · 6x 저장)은 verify_rhythm.sql 의 "008 note_speed" 줄로 확인하세요.')
+    if missing:
+        return 1
+    print('\nOK  온라인 기록 · 랭킹 · 츄르 준비 완료')
     return 0
 
 

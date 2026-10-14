@@ -204,6 +204,11 @@ def create_router(env=None, db_factory=RhythmDb):
     def cfg():
         return load_config(env)
 
+    startup = cfg()
+    if startup.login_enabled and not startup.online_enabled:
+        # 로그인은 되는데 기록 저장 · 랭킹 · 츄르가 꺼진 상태: 결과 화면에 "온라인 기록 기능이 준비되지 않음"
+        log.warning('rhythm online records disabled: missing/invalid %s', ', '.join(startup.online_issues))
+
     def member(request):
         return session_member(request, env)
 
@@ -259,6 +264,8 @@ def create_router(env=None, db_factory=RhythmDb):
             'loggedIn': who is not None,
             'nickname': who['name'] if who else None,
             'onlineEnabled': c.online_enabled,
+            # 로그인은 됐는데 온라인 기록이 꺼져 있으면 'server-config' (어떤 변수인지는 서버 로그 · check 명령으로만)
+            'onlineIssue': 'server-config' if who is not None and not c.online_enabled else None,
             'loginUrl': c.phone_url,
             'churuBalance': balance,
         })

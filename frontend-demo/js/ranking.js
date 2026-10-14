@@ -100,6 +100,8 @@ async function request(path, options = {}) {
 }
 
 const REASON_BY_STATUS = { 401: 'login-required', 403: 'forbidden', 429: 'too-many', 503: 'not-configured' };
+/** 503 은 두 가지: 서버에 설정이 없음(not_configured) / 서버 ↔ DB 서명 · 비밀값 · 키 불일치(misconfigured) */
+const reasonOf = r => (r.status === 503 && r.body?.error === 'misconfigured' ? 'misconfigured' : REASON_BY_STATUS[r.status]);
 
 /**
  * 로그인 · 온라인 기능 상태. { loggedIn, nickname, onlineEnabled, loginUrl, churuBalance }
@@ -115,6 +117,7 @@ export async function getOnlineStatus() {
       nickname: typeof r.body.nickname === 'string' ? r.body.nickname : null,
       onlineEnabled: r.body.onlineEnabled === true,
       loginUrl: typeof r.body.loginUrl === 'string' ? r.body.loginUrl : null,
+      onlineIssue: r.body.onlineIssue === 'server-config' ? 'server-config' : null,
       churuBalance: Number.isInteger(r.body.churuBalance) && r.body.churuBalance >= 0 ? r.body.churuBalance : null,
     };
   } catch {
@@ -165,7 +168,7 @@ export async function submitRanking(record, context = {}, { retries = 1, retryDe
     try {
       const r = await request('/results', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
       if (r.ok && r.body?.ok) return submitResult(r.body);
-      reason = REASON_BY_STATUS[r.status] || (r.status >= 400 && r.status < 500 ? 'rejected' : 'failed');
+      reason = reasonOf(r) || (r.status >= 400 && r.status < 500 ? 'rejected' : 'failed');
     } catch {
       reason = 'failed';
     }

@@ -6,9 +6,11 @@ import { rankingProblemText, renderRankingList } from './ranking-view.js';
 import { requireMember } from './session.js';
 import { loadLastSelection, loadSettings } from './storage.js';
 import { applyUiSkin } from './theme.js';
+import { installButtonSound } from './audio.js';
 import { renderWalletBadge, walletView } from './wallet.js';
 
 applyUiSkin();
+installButtonSound(() => loadSettings());
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 let catalog = [];

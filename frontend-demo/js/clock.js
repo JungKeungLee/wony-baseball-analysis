@@ -18,6 +18,8 @@ export class VideoClock {
     this.video = video;
     this.allowSeek = allowSeek;
     this.nowFn = nowFn;
+    // 소리 설정의 음소거 (iPhone 은 볼륨을 못 바꾸므로 muted 로만 끔). 시계 · 재생 위치와 무관
+    this.muted = false;
     this.reset();
     video.playbackRate = 1;
     video.defaultPlaybackRate = 1;
@@ -45,7 +47,7 @@ export class VideoClock {
     const p = v.play();
     const done = () => {
       if (!this.started) v.pause();
-      v.muted = false;
+      v.muted = this.muted;
     };
     if (p && typeof p.then === 'function') p.then(done, done); else done();
   }
@@ -70,7 +72,7 @@ export class VideoClock {
       const r = p - this.leadEnd;
       if (r < 0) return r;
       this.started = true;
-      v.muted = false;
+      v.muted = this.muted;
       const played = v.play();
       if (played && played.catch) played.catch(() => {});
       this.lastV = v.currentTime * 1000;

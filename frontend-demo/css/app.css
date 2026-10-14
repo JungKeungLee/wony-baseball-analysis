@@ -929,3 +929,75 @@ body[data-lanes="8"] .lane-btn { font-size: 1.05rem; border-radius: 12px; border
 .rank-change.is-animated { animation: result-in 0.3s ease-out both; }
 .churu-box[data-state="granted"] { animation: result-in 0.3s ease-out both; }
 .churu-box[data-state="granted"] .churu-amount { animation: grade-in 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) 0.1s both; }
+
+/* ── 워니 안내: 이미지 + 말풍선 (흐름 안의 요소, 겹침 없음). 이미지는 정사각형 영역에 비율 유지 ── */
+.wony { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.wony-img { flex: none; width: 72px; height: 72px; object-fit: contain; }
+.wony-bubble {
+  position: relative;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+.wony-bubble::before {
+  content: "";
+  position: absolute;
+  left: -7px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  background: inherit;
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  transform: translateY(-50%) rotate(45deg);
+}
+.wony-home { margin: -8px 0 16px; }
+.wony-result { margin: 10px 0 0; }
+.wony-result .wony-img { width: 56px; height: 56px; }
+.wony-result .wony-bubble { font-size: 0.9rem; padding: 8px 12px; background: var(--sub); }
+@media (orientation: landscape) and (max-height: 500px) {
+  .wony-result .wony-img { display: none; }   /* 낮은 가로 화면: 말풍선만 (결과 · 버튼 공간 우선) */
+  .wony-result .wony-bubble::before { display: none; }
+}
+@media (max-width: 340px) { .wony-img { width: 52px; height: 52px; } }
+
+/* 곡 선택: 즐겨찾기 · 미리듣기 */
+.song-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; margin-bottom: 8px; }
+.preview-note { margin: 0; font-size: 0.88rem; }
+/* 곡 선택: 상태 · 미리듣기 안내가 비어 있으면 자리를 차지하지 않음 (문구가 생기면 그대로 표시) */
+body[data-page="songs"] #status:empty, .preview-note:empty { display: none; }
+.song-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }
+.song-actions { display: grid; gap: 8px; align-content: center; }
+.song-action {
+  min-width: 48px;
+  min-height: 44px;
+  border-radius: 14px;
+  border: 2px solid var(--border);
+  background: var(--card);
+  color: var(--main-dark);
+  font: inherit;
+  font-size: 1.2rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.song-action:hover { border-color: var(--main); }
+.song-action:disabled { opacity: 0.4; cursor: not-allowed; }
+.fav-btn.is-on { color: #C98A00; border-color: var(--yellow); background: var(--yellow-soft); }
+.preview-btn.is-on { color: #fff; background: var(--main); border-color: var(--main); }
+
+/* 설정: 키 입력 테스트 · 소리 */
+.key-row.is-hit { background: var(--yellow-soft); border-radius: 12px; box-shadow: inset 0 0 0 2px var(--yellow); }
+.key-test-hint { margin: 8px 0 0; font-size: 0.85rem; }
+input[type="range"] { min-height: 44px; accent-color: var(--main); cursor: pointer; }
+
+/* 로그인은 됐지만 서버 설정 문제로 온라인 기록이 꺼진 상태 */
+.online-card.is-warning { border-color: #F3C6CF; background: #FFF6F8; }
+.online-card.is-warning .online-text { color: var(--danger); }

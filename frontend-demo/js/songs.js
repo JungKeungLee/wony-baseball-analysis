@@ -1,8 +1,12 @@
-// 곡 선택: 곡 → 난이도 → 배속 → 영상 ON/OFF → 게임 시작
+// 곡 선택: 곡 → 난이도 → KEY 모드 → 배속 → 영상 ON/OFF → 게임 시작
 // 이 화면은 cover 이미지만 불러온다 (MP4 는 게임 화면에서 고른 곡 하나만 preload="metadata").
+// 예외: ▶ 미리듣기를 누르면 그 곡 영상의 일부만 받는다 (preview-player.js, 한 번에 한 곡).
+// 즐겨찾기(★)는 이 기기에만 (localStorage wony_rhythm_favorites), 즐겨찾기 곡이 위로.
 import { DIFFICULTIES, DIFFICULTY_LABELS, LANE_MODE_LABELS, NOTE_SPEEDS, SUPPORTED_LANE_COUNTS } from './config.js';
 import { laneModeProblem, loadCatalog, pickDifficulty, supportsLaneMode } from './catalog.js';
-import { loadLastSelection, loadSettings, saveLastSelection, updateSettings } from './storage.js';
+import { loadFavorites, loadLastSelection, loadSettings, saveLastSelection, toggleFavorite, updateSettings } from './storage.js';
+import { installButtonSound } from './audio.js';
+import { createPreviewPlayer } from './preview-player.js';
 import { bestOf, loadMyRecords, loadRanking } from './ranking.js';
 import { requireMember } from './session.js';
 import { rankingProblemText, renderRankingList } from './ranking-view.js';
@@ -15,7 +19,10 @@ let catalog = [];
 let selected = null;
 let difficulty = null;
 let myBest = [];   // 서버의 내 최고 기록 (로그인 회원)
-const NO_BEST = Object.freeze({ bestScore: 0, bestGrade: null });
+const NO_BEST = Object.freeze({ bestScore: 0, bestGrade: null, bestAccuracy: null });
+let favorites = new Set(loadFavorites());
+const player = createPreviewPlayer({ getSettings: () => settings, onChange: renderPreviewButtons });
+installButtonSound(() => settings);
 let keyMode = settings.laneCount;   // 고른 KEY 모드 (곡이 지원하지 않으면 4)
 const loadBestRecord = (songId, d) => bestOf(myBest, songId, d, keyMode) || NO_BEST;
 const online = requireMember();   // 로그인 필수 (세션이 만료됐으면 로그인 안내로)
@@ -39,7 +46,7 @@ function coverEl(song) {
   return img;
 }
 
-function songCard(song) {
+function songItem(song) {
   const chips = el('div', { class: 'diff-chips' }, ...DIFFICULTIES.map(d => {
     const ok = song.difficulties.includes(d);
     const best = ok ? loadBestRecord(song.id, d) : null;
@@ -52,9 +59,46 @@ function songCard(song) {
     el('span', { class: 'song-meta', text: song.artist }),
     chips);
   if (!song.video) info.append(el('span', { class: 'song-warn', text: '영상 준비 중' }));
-  const card = el('button', { type: 'button', class: 'song-card', 'aria-pressed': 'false', 'data-song': song.id }, coverEl(song), info);
+  const card = el('button', { type: 'button', class: 'song-card', 'aria-pressed': String(selected?.id === song.id), 'data-song': song.id }, coverEl(song), info);
   card.addEventListener('click', () => select(song, true));
-  return card;
+  const fav = favorites.has(song.id);
+  const favBtn = el('button', { type: 'button', class: `song-action fav-btn${fav ? ' is-on' : ''}`, 'aria-pressed': String(fav),
+    'aria-label': `${song.title} 즐겨찾기`, 'data-fav': song.id, text: fav ? '★' : '☆' });
+  favBtn.addEventListener('click', () => {
+    if (toggleFavorite(song.id)) favorites.add(song.id); else favorites.delete(song.id);
+    renderList();
+  });
+  const previewBtn = el('button', { type: 'button', class: 'song-action preview-btn', 'aria-pressed': 'false',
+    'aria-label': `${song.title} 미리듣기`, 'data-preview': song.id, text: '▶', disabled: !song.video });
+  previewBtn.addEventListener('click', () => {
+    const r = player.toggle(song);
+    $('previewNote').textContent = r === 'muted' ? '🔇 음소거 상태예요. 설정에서 음소거를 끄면 미리 들을 수 있어요.'
+      : r === 'playing' ? `♪ ${song.title} 미리듣기 (약 15초)` : '';
+  });
+  return el('div', { class: 'song-item', 'data-item': song.id }, card, el('div', { class: 'song-actions' }, favBtn, previewBtn));
+}
+
+/** 즐겨찾기 곡을 위로 (같으면 원래 순서), "즐겨찾기만"이면 거르기 */
+function renderList() {
+  const favOnly = $('favOnly').checked;
+  const list = catalog
+    .map((song, i) => ({ song, i, fav: favorites.has(song.id) }))
+    .filter(x => !favOnly || x.fav)
+    .sort((a, b) => (b.fav - a.fav) || (a.i - b.i))
+    .map(x => songItem(x.song));
+  $('songList').replaceChildren(...list);
+  if (favOnly && !list.length) $('songList').append(el('p', { class: 'muted', text: '즐겨찾기한 곡이 없어요. 곡의 ☆ 를 눌러 추가하세요.' }));
+  renderPreviewButtons(player.current);
+}
+
+function renderPreviewButtons(current) {
+  for (const btn of document.querySelectorAll('[data-preview]')) {
+    const on = current?.id === btn.dataset.preview;
+    btn.textContent = on ? '■' : '▶';
+    btn.setAttribute('aria-pressed', String(on));
+    btn.classList.toggle('is-on', on);
+  }
+  if (!current) $('previewNote').textContent = $('previewNote').textContent.startsWith('♪') ? '' : $('previewNote').textContent;
 }
 
 function radio(name, value, label, { checked, disabled, sub, diff } = {}) {
@@ -87,7 +131,7 @@ online.then(status => {
   loadMyRecords().then(r => {
     if (!r.ok) return;
     myBest = r.best;
-    $('songList').replaceChildren(...catalog.map(songCard));   // 난이도별 최고 기록 표시
+    renderList();   // 난이도별 최고 기록 표시
     if (selected) select(selected, false);
   });
 });
@@ -133,7 +177,8 @@ function select(song, scroll) {
     const best = ok ? loadBestRecord(song.id, d) : null;
     return radio('diff', d, DIFFICULTY_LABELS[d], {
       checked: d === difficulty, disabled: !ok, diff: d,
-      sub: ok ? (best.bestScore ? `${best.bestGrade || ''} ${fmt(best.bestScore)}`.trim() : '기록 없음') : '채보 준비 중',
+      // 개인 BEST (이 곡 · 난이도 · KEY 모드): 등급 · 점수 · 정확도
+      sub: ok ? (best.bestScore ? `${best.bestGrade || ''} ${fmt(best.bestScore)}${Number.isFinite(Number(best.bestAccuracy)) ? ` · ${Number(best.bestAccuracy).toFixed(1)}%` : ''}`.trim() : '기록 없음') : '채보 준비 중',
     });
   }));
   $('setup').hidden = false;
@@ -167,13 +212,15 @@ $('playBtn').addEventListener('click', e => {
     e.preventDefault();
     return;
   }
+  player.stop();   // 게임으로 가기 전에 미리듣기 정지
   saveLastSelection(selected.id, difficulty);
 });
 
 loadCatalog().then(c => {
   catalog = c;
   $('status').textContent = catalog.length ? '' : '등록된 곡이 없습니다. (tools/import_song.py 또는 곡 추가 화면으로 추가)';
-  $('songList').append(...catalog.map(songCard));
+  renderList();
+  $('favOnly').addEventListener('change', renderList);
   const initial = catalog.find(s => s.id === last?.song) || catalog[0];
   if (initial) select(initial, false);
 }).catch(err => {
