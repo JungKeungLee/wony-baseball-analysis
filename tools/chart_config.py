@@ -102,4 +102,31 @@ def chord_combos(lane_count, size):
     half = n // 2
     return tuple(sorted({(0, half - 1, n - 1), (0, half, n - 1), (0, 1, n - 1), (0, n - 2, n - 1)}))
 
+# 6 / 8 KEY 전용 조정 (4키 규칙 RULES 위에 덮어씀. 4키 채보는 영향 없음)
+#   손배치: 왼손 = 앞쪽 절반 레인, 오른손 = 뒤쪽 절반. 빠른 구간은 양손 교대(cross_gap_ms), 동시치기는 양손에 나눠 줌
+#   레인이 많을수록 한 번에 움직일 수 있는 폭(max_step) · 동시치기 비율이 조금 커짐 (손가락이 더 많음)
+#   EASY 는 동시치기 없이 가까운 레인 위주 (초보자 판독), HELL 은 3키 동시 · 넓은 이동 · 빠른 양손 교대
+LANE_MODE_RULES = {
+    6: {
+        'easy': {'max_step': 2, 'chord_rate': 0.0, 'triple_rate': 0.0},
+        'normal': {'max_step': 3, 'chord_rate': 0.07, 'triple_rate': 0.0},
+        'hard': {'max_step': 4, 'chord_rate': 0.16, 'triple_rate': 0.0, 'cross_gap_ms': 220},
+        'hell': {'max_step': 4, 'chord_rate': 0.24, 'triple_rate': 0.04, 'cross_gap_ms': 190},
+    },
+    8: {
+        'easy': {'max_step': 3, 'chord_rate': 0.0, 'triple_rate': 0.0},
+        'normal': {'max_step': 4, 'chord_rate': 0.08, 'triple_rate': 0.0},
+        'hard': {'max_step': 5, 'chord_rate': 0.18, 'triple_rate': 0.01, 'cross_gap_ms': 230},
+        'hell': {'max_step': 5, 'chord_rate': 0.28, 'triple_rate': 0.06, 'cross_gap_ms': 200},
+    },
+}
+# 같은 손으로 이 횟수보다 많이 연속하면 감점 (빠른 구간에서 한 손만 혹사하지 않게, 6/8키만)
+SAME_HAND_RUN = {'easy': 4, 'normal': 4, 'hard': 3, 'hell': 3}
+
+
+def rules_for(difficulty, lane_count=DEFAULT_LANE_COUNT):
+    """난이도 규칙 + KEY 모드 조정 (4키는 RULES 그대로)"""
+    return {**RULES[difficulty], **LANE_MODE_RULES.get(lane_count, {}).get(difficulty, {})}
+
+
 CHART_VERSION = 1

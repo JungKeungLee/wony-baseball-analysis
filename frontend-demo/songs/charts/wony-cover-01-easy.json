@@ -5,7 +5,7 @@
   "version": 1,
   "bpm": 128.98,
   "musicStartMs": 7041,
-  "endMs": 214142,
+  "endMs": 219275,
   "notes": [
     {"time":7041,"lane":2},
     {"time":7963,"lane":3},
@@ -346,6 +346,12 @@
     {"time":210296,"lane":0},
     {"time":210766,"lane":1},
     {"time":211226,"lane":3},
-    {"time":211686,"lane":1}
+    {"time":211686,"lane":1},
+    {"time":212619,"lane":2},
+    {"time":213530,"lane":1},
+    {"time":214458,"lane":0},
+    {"time":215413,"lane":2},
+    {"time":216334,"lane":0},
+    {"time":217275,"lane":2}
   ]
 }

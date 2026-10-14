@@ -604,12 +604,26 @@ def test_lane_mode_results_use_that_modes_chart(client, lanes):
     assert post(client, row(lane_count=lanes, total_notes=four)).status_code == 400
 
 
-def test_song_without_lane_mode_is_rejected(client):
+def test_song_without_lane_mode_is_rejected(client, tmp_path, monkeypatch):
+    """4 KEY 채보만 있는 곡(laneModes 없음)에 6 KEY 기록은 거절"""
+    from app.rhythm import routes
+    site = tmp_path / 'site'
+    (site / 'songs' / 'charts').mkdir(parents=True)
+    (site / 'songs' / 'songs.json').write_text(json.dumps({'songs': [{'id': 'four-only', 'title': 'x', 'difficulties': ['hard']}]}), encoding='utf-8')
+    (site / 'songs' / 'charts' / 'four-only-hard.json').write_text(json.dumps({'notes': [{'time': 1000, 'lane': 0}] * 3}), encoding='utf-8')
+    monkeypatch.setattr(routes, 'SITE', site)
     login(client)
-    total = chart_total('wony-cover-01', 'hard', 4)
-    body = row(song_id='wony-cover-01', lane_count=6, total_notes=total, perfect_count=total, max_combo=total, score=total * 1000)
+    assert post(client, row(song_id='four-only', lane_count=6, total_notes=3)).json()['error'] == 'unknown_song'
+    assert post(client, row(song_id='four-only', lane_count=4, total_notes=3, perfect_count=3, max_combo=3, score=3000)).status_code in (200, 429)
+
+
+@pytest.mark.parametrize('lanes', [4, 6, 8])
+def test_wony_cover_supports_all_key_modes(client, lanes):
+    login(client, sub=str(uuid.uuid4()))
+    total = chart_total('wony-cover-01', 'hard', lanes)
+    body = row(song_id='wony-cover-01', lane_count=lanes, total_notes=total, perfect_count=total, max_combo=total, score=total * 1000)
     res = post(client, body)
-    assert res.status_code == 400 and res.json()['error'] == 'unknown_song', '4 KEY 채보만 있는 곡'
+    assert res.status_code == 200, res.text
 
 
 @pytest.mark.parametrize('speed, code', [(1, 200), (3, 200), (4, 200), (6, 200), (0.75, 422), (1.75, 422), (2.5, 422)])

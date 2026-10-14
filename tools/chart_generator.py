@@ -10,8 +10,9 @@
 import bisect
 import random
 
+from audio_analyzer import Candidate
 from chart_config import (CHART_VERSION, DEFAULT_LANE_COUNT, DIFFICULTIES, LEVEL_WEIGHT, MIN_GAP_MS, RULES,
-                          SUPPORTED_LANE_COUNTS, chord_combos)
+                          SAME_HAND_RUN, SUPPORTED_LANE_COUNTS, chord_combos, rules_for)
 
 
 class ChartError(RuntimeError):
@@ -58,9 +59,9 @@ def select_times(analysis, difficulty):
     return chosen
 
 
-def _chord_flags(notes, difficulty, rng):
+def _chord_flags(notes, difficulty, rng, rules=None):
     """notes: 시간순 Candidate. 동시치기할 노트 index → 레인 수(2 또는 3)."""
-    rules = RULES[difficulty]
+    rules = rules or RULES[difficulty]
     if rules['chord_rate'] <= 0 or len(notes) < 3:
         return {}
     scored = []
@@ -109,6 +110,10 @@ def _pick_lane(c, gap, state, rules, rng, lane_count):
                 score -= 0.8  # 같은 방향 한 칸 이동이 이어지면 감점
                 if len(moves) >= 2 and moves[-2] == moves[-1]:
                     score -= 4.0  # 0→1→2→3 같은 계단은 거의 만들지 않음
+        if lane_count > 4:  # 6/8키 손배치: 빠른 구간에서 한 손만 계속 쓰지 않게
+            same_hand = prev is not None and (lane < half) == (prev < half)
+            if same_hand and state['hand_run'] >= state['hand_limit'] and gap < 400:
+                score -= 1.5
         score += rng.random() * 0.6  # 동점 깨기용 (곡/난이도마다 고정된 seed)
         if score > best_score:
             best, best_score = lane, score
@@ -129,6 +134,12 @@ def _pick_chord(size, gap, state, rules, c, rng, lane_count):
             score -= abs(center - c.pitch)
         if combo == state.get('last_chord'):
             score -= 0.8
+        if lane_count > 4:  # 6/8키: 동시치기는 양손에 나눠서 (한 손 3키 금지, 양손 2키 선호)
+            hands = {lane < lane_count / 2 for lane in combo}
+            if len(hands) == 2:
+                score += 2.0   # 한 손 두 키보다 양손 동시치기 (같은 손 연타 금지 때문에 불가능할 때만 한 손)
+            elif size >= 3:
+                score -= 1000
         score += rng.random() * 0.5
         if score > best_score:
             best, best_score = combo, score
@@ -136,13 +147,18 @@ def _pick_chord(size, gap, state, rules, c, rng, lane_count):
 
 
 def assign_lanes(notes, difficulty, seed, lane_count=DEFAULT_LANE_COUNT):
-    """레인 번호는 0 <= lane < lane_count."""
-    rules = RULES[difficulty]
+    """레인 번호는 0 <= lane < lane_count. 4키는 RULES, 6/8키는 rules_for 의 KEY 모드 조정을 쓴다."""
+    rules = rules_for(difficulty, lane_count)
     rng = random.Random(seed)
-    flags = _chord_flags(notes, difficulty, rng)
+    flags = _chord_flags(notes, difficulty, rng, rules)
+    state = {'prev': None, 'prev_set': set(), 'repeat': 0, 'moves': [], 'last_chord': None, 'recent': [],
+             'hand_run': 0, 'hand_limit': SAME_HAND_RUN[difficulty]}
+    return _place(notes, flags, state, None, rules, rng, lane_count)
+
+
+def _place(notes, flags, state, prev_time, rules, rng, lane_count):
+    """후보를 시간순으로 레인에 배치 (state 를 이어받아 앞 채보에 붙여 쓸 수 있음)"""
     out = []
-    state = {'prev': None, 'prev_set': set(), 'repeat': 0, 'moves': [], 'last_chord': None, 'recent': []}
-    prev_time = None
     for i, c in enumerate(notes):
         gap = c.time - prev_time if prev_time is not None else 10 ** 9
         size = flags.get(i, 1)
@@ -157,6 +173,9 @@ def assign_lanes(notes, difficulty, seed, lane_count=DEFAULT_LANE_COUNT):
             if state['prev'] is not None:
                 state['moves'] = (state['moves'] + [lane - state['prev']])[-3:]
             state['repeat'] = state['repeat'] + 1 if lane == state['prev'] else 0
+            half = lane_count / 2
+            same = state['prev'] is not None and (lane < half) == (state['prev'] < half)
+            state['hand_run'] = state['hand_run'] + 1 if same else 0
             state.update(prev=lane, prev_set={lane})
             state['recent'] = (state['recent'] + [lane])[-8:]
             out.append({'time': c.time, 'lane': lane})
@@ -177,6 +196,116 @@ def generate_chart(analysis, song_id, difficulty, *, seed_base='', lane_count=DE
     lanes.sort(key=lambda n: (n['time'], n['lane']))
     # 결과 화면으로 넘어가는 시각: 음악 끝 + 2초 (영상 길이를 넘지 않음)
     end_ms = min(analysis.duration_ms, max(analysis.music_end_ms + 2000, lanes[-1]['time'] + 1000))
+    return {
+        'songId': song_id,
+        'difficulty': difficulty,
+        'generated': True,
+        'version': CHART_VERSION,
+        'laneCount': lane_count,
+        'bpm': round(analysis.bpm, 2),
+        'musicStartMs': analysis.music_start_ms,
+        'endMs': end_ms,
+        'notes': lanes,
+    }
+
+
+def _state_from_chart(chart_notes, difficulty, lane_count):
+    """기존 채보 끝부분에서 배치 상태(직전 레인 · 최근 레인 · 이동 방향 · 마지막 동시치기)를 다시 만든다"""
+    by_time = {}
+    for n in chart_notes:
+        by_time.setdefault(n['time'], []).append(n['lane'])
+    groups = sorted(by_time.items())
+    state = {'prev': None, 'prev_set': set(), 'repeat': 0, 'moves': [], 'last_chord': None, 'recent': [],
+             'hand_run': 0, 'hand_limit': SAME_HAND_RUN[difficulty]}
+    singles = []
+    for _, lanes in groups[-12:]:
+        state['recent'] = (state['recent'] + sorted(lanes))[-8:]
+        if len(lanes) == 1:
+            singles.append(lanes[0])
+        else:
+            singles = []
+            state['last_chord'] = tuple(sorted(lanes))
+    last_t, last_lanes = groups[-1]
+    if len(last_lanes) == 1:
+        state.update(prev=last_lanes[0], prev_set={last_lanes[0]})
+        state['moves'] = [b - a for a, b in zip(singles, singles[1:])][-3:]
+    else:
+        state.update(prev=None, prev_set=set(last_lanes))
+    return state, last_t
+
+
+def extend_with_outro(chart, analysis, outro, difficulty, *, seed):
+    """기존 채보 뒤에 곡 끝 박(outro_beats)만 이어 붙인다. 기존 노트(time · lane)는 그대로 두고,
+    같은 난이도 규칙(밀도 · 동시치기 비율 · 연타 금지 · 이동 폭)으로 마지막 노트에서 자연스럽게 이어지게 배치."""
+    lane_count = chart.get('laneCount', DEFAULT_LANE_COUNT)
+    notes = chart['notes']
+    last = max(n['time'] for n in notes)
+    extra = [c for c in outro if c.level in OUTRO_LEVELS[difficulty] and c.time - last >= MIN_GAP_MS[difficulty]]
+    if not extra:
+        return chart, []
+    rules = rules_for(difficulty, lane_count)
+    rng = random.Random(f'{seed}:outro')
+    flags = _chord_flags(extra, difficulty, rng, rules) if len(extra) >= 3 else {}
+    state, prev_time = _state_from_chart(notes, difficulty, lane_count)
+    added = _place(extra, flags, state, prev_time, rules, rng, lane_count)
+    added.sort(key=lambda n: (n['time'], n['lane']))
+    end_ms = min(analysis.duration_ms, max(chart.get('endMs', 0), added[-1]['time'] + 2000))
+    return {**chart, 'endMs': end_ms, 'notes': [*notes, *added]}, added
+
+
+def candidates_at(analysis, times):
+    """주어진 시각(예: 기존 4키 채보의 리듬 포인트)의 분석 후보. 분석에 없는 시각은 None"""
+    by_time = {c.time: c for c in analysis.candidates}
+    return [by_time.get(t) for t in times]
+
+
+def outro_beats(analysis, debug, *, min_salience=0.8):
+    """분석이 음악 끝으로 본 박(music_end_ms) 뒤에도 박이 또렷하게 이어지는 곡 끝부분.
+    박 간격이 조금 흔들려(±30ms) 엄격한 박자 검사를 통과하지 못했을 뿐 실제로는 음악이 계속되는 경우가 있다
+    (wony-cover-01: 212.1초 이후 약 5초). 박 세기(salience)가 기준 이상인 동안만 이어 붙인다.
+    반환: Candidate 목록 (박 위치 · 강박 등급, 실제 소리의 attack 시각)"""
+    beat_ms, sal, last = debug['beat_ms'], debug['salience'], debug['last']
+    period = 60000 / analysis.bpm
+    base = [c for c in analysis.candidates if c.level == 0]
+    if not base:
+        return []
+    downbeat = base[-1].time
+    recent = [c for c in analysis.candidates if c.time >= analysis.music_end_ms - 8000]
+    intensity = sum(c.intensity for c in recent) / len(recent) if recent else 0.7
+    by_time = sorted(analysis.candidates, key=lambda c: c.time)
+    out = []
+    for i in range(last + 1, len(beat_ms)):
+        t = int(round(beat_ms[i]))
+        if sal[i] < min_salience or t >= analysis.duration_ms - 50 or t <= analysis.music_end_ms:
+            break
+        k = int(round((t - downbeat) / period)) % 4
+        level = 0 if k == 0 else 1 if k == 2 else 2
+        # 소리 높낮이는 두 마디 앞 같은 박의 값을 빌려 와 앞 프레이즈와 비슷한 레인 흐름(반복 패턴)이 되게
+        ref_t = t - 8 * period
+        ref = min(by_time, key=lambda c: abs(c.time - ref_t))
+        out.append(Candidate(time=t, level=level, strength=round(min(1.0, sal[i] / 1.3), 4), has_onset=True,
+                             intensity=round(intensity, 4), pitch=ref.pitch, low=ref.low, high=ref.high))
+    return out
+
+
+OUTRO_LEVELS = {'easy': {0, 1}, 'normal': {0, 1, 2}, 'hard': {0, 1, 2}, 'hell': {0, 1, 2}}
+
+
+def generate_chart_from_times(analysis, song_id, difficulty, times, *, lane_count, outro=(), seed_base=''):
+    """기존 채보의 리듬 포인트(times)를 그대로 쓰고 레인 배치 · 동시치기만 lane_count 에 맞게 새로 만든다.
+    outro: 곡 끝 박 (outro_beats). 난이도에 따라 강박 위주(EASY) ~ 모든 박(NORMAL 이상)만 더한다."""
+    if lane_count not in SUPPORTED_LANE_COUNTS:
+        raise ChartError(f'지원하지 않는 레인 수: {lane_count}')
+    found = candidates_at(analysis, sorted(set(times)))
+    if any(c is None for c in found):
+        raise ChartError('기존 채보의 리듬 포인트가 분석 결과와 맞지 않습니다 (영상이 바뀌었을 수 있음).')
+    last = found[-1].time
+    gap = MIN_GAP_MS[difficulty]
+    extra = [c for c in outro if c.level in OUTRO_LEVELS[difficulty] and c.time - last >= gap]
+    notes = found + extra
+    lanes = assign_lanes(notes, difficulty, f'{seed_base or song_id}:{difficulty}:{lane_count}k', lane_count)
+    lanes.sort(key=lambda n: (n['time'], n['lane']))
+    end_ms = min(analysis.duration_ms, lanes[-1]['time'] + 2000)
     return {
         'songId': song_id,
         'difficulty': difficulty,

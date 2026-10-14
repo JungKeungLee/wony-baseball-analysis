@@ -46,13 +46,18 @@
       "bpm": 129.0,
       "musicStartMs": 7041,
       "noteCounts": {
-        "easy": 340,
-        "normal": 848,
-        "hard": 1375,
-        "hell": 1573
+        "easy": 346,
+        "normal": 860,
+        "hard": 1387,
+        "hell": 1586
       },
       "generated": true,
-      "addedAt": "2026-10-13T17:19:37+00:00"
+      "addedAt": "2026-10-13T17:19:37+00:00",
+      "laneModes": [
+        4,
+        6,
+        8
+      ]
     }
   ]
 }

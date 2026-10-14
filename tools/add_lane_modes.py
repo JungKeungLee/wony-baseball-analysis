@@ -2,12 +2,17 @@
 
     python tools/add_lane_modes.py --song demo-beat --lanes 6,8
 
-게임에서 재생하는 바로 그 MP4 를 다시 분석하므로 노트 시각은 4키 채보와 같고, 레인 배치만 레인 수에 맞게 새로 만든다
-(4키 채보를 6/8키로 "변환"하지 않음). 결과:
+기본(from_4k): 난이도마다 기존 4키 채보의 리듬 포인트(노트 시각)를 그대로 쓰고, 레인 배치 · 동시치기는 6/8키 규칙
+(chart_config.LANE_MODE_RULES: 좌우 손배치 · 양손 동시치기 · 교대 · 이동 폭 · 난이도별 동시치기 비율)으로 새로 만든다.
+4키 레인 번호를 옮기거나 늘리는 "변환"이 아니다. 4키 채보 파일은 건드리지 않는다.
+분석이 음악 끝으로 본 시점 뒤에도 박이 또렷하게 이어지면(곡 끝부분) 그 박도 난이도에 맞게 더한다 (outro_beats).
+--fresh: 4키 채보 대신 현재 생성 규칙으로 리듬 포인트부터 새로 고른다 (이전 방식).
+결과:
   frontend-demo/songs/charts/{id}-{difficulty}-{n}k.json
   songs.json 의 해당 곡에 "laneModes": [4, 6, 8]  ← 게임 · 서버가 이 목록으로 선택 가능한 KEY 모드를 판단
 """
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -20,7 +25,7 @@ import song_store  # noqa: E402
 from chart_config import DIFFICULTIES, SUPPORTED_LANE_COUNTS  # noqa: E402
 
 
-def add_lane_modes(song_id, lane_counts, paths=None, progress=print):
+def add_lane_modes(song_id, lane_counts, paths=None, progress=print, *, from_4k=True):
     paths = paths or song_store.Paths()
     lane_counts = sorted({int(n) for n in lane_counts} - {4})
     bad = [n for n in lane_counts if n not in SUPPORTED_LANE_COUNTS]
@@ -36,11 +41,22 @@ def add_lane_modes(song_id, lane_counts, paths=None, progress=print):
     info = media.probe(video)
     duration_ms = int(info['duration'] * 1000)
     samples = media.extract_audio(video, audio_analyzer.SR)
-    analysis = audio_analyzer.analyze(samples, offset_ms=media.audio_offset_ms(info), duration_ms=duration_ms)
+    debug = {}
+    analysis = audio_analyzer.analyze(samples, offset_ms=media.audio_offset_ms(info), duration_ms=duration_ms, debug=debug)
     del samples
+    diffs = song.get('difficulties', DIFFICULTIES)
+    if from_4k:
+        base = {d: json.loads(paths.chart(song_id, d).read_text(encoding='utf-8')) for d in diffs}
+        outro = chart_generator.outro_beats(analysis, debug)
+        if outro:
+            progress(f'곡 끝 박 {len(outro)}개 추가 ({outro[0].time}~{outro[-1].time}ms, 분석상 음악 끝 {analysis.music_end_ms}ms 이후)')
     written = []
     for n in lane_counts:
-        charts = {d: chart_generator.generate_chart(analysis, song_id, d, lane_count=n) for d in song.get('difficulties', DIFFICULTIES)}
+        if from_4k:
+            charts = {d: chart_generator.generate_chart_from_times(analysis, song_id, d, [x['time'] for x in base[d]['notes']],
+                                                                   lane_count=n, outro=outro) for d in diffs}
+        else:
+            charts = {d: chart_generator.generate_chart(analysis, song_id, d, lane_count=n) for d in diffs}
         errors = [e for c in charts.values() for e in chart_generator.validate_chart(c, duration_ms, music_start_ms=analysis.music_start_ms)]
         if len(charts) == len(DIFFICULTIES):
             errors += chart_generator.validate_set(charts)[0]
@@ -64,9 +80,10 @@ def main(argv=None):
     p = argparse.ArgumentParser(description='등록된 곡에 6키 / 8키 채보 추가')
     p.add_argument('--song', required=True)
     p.add_argument('--lanes', default='6,8', help='예: 6,8')
+    p.add_argument('--fresh', action='store_true', help='4키 채보의 리듬 포인트 대신 현재 생성 규칙으로 새로 고름')
     args = p.parse_args(argv)
     try:
-        files = add_lane_modes(args.song, args.lanes.split(','))
+        files = add_lane_modes(args.song, args.lanes.split(','), from_4k=not args.fresh)
     except (song_store.StoreError, chart_generator.ChartError, media.MediaError, audio_analyzer.AnalysisError) as exc:
         print(f'실패: {exc}', file=sys.stderr)
         return 1

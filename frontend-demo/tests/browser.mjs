@@ -959,6 +959,14 @@ results.push('\n[4 / 6 / 8 KEY]');
     await page.locator('#keyGroup label', { hasText: '6 KEY' }).click();
     assert.match(await page.locator('#playBtn').getAttribute('href'), /&keys=6$/);
     await page.locator('.song-card[data-song="wony-cover-01"]').click();
+    assert.deepEqual(await page.locator('#keyGroup input').evaluateAll(els => els.map(e => e.disabled)), [false, false, false], 'wony-cover-01 도 4/6/8 KEY');
+    assert.ok(await page.locator('#keyNote').isHidden());
+    // 4 KEY 채보만 있는 곡 (songs.json 에 laneModes 없음): 6/8 KEY 비활성 + 안내
+    const catalog = await (await fetch(`${BASE}/songs/songs.json`)).json();
+    const fourOnly = { ...catalog, songs: catalog.songs.map(s => (s.id === 'wony-cover-01' ? { ...s, laneModes: undefined } : s)) };
+    await page.route('**/songs/songs.json', route => route.fulfill({ json: fourOnly }));
+    await page.goto(`${BASE}/songs`);
+    await page.locator('.song-card[data-song="wony-cover-01"]').click();
     assert.deepEqual(await page.locator('#keyGroup input').evaluateAll(els => els.map(e => e.disabled)), [false, true, true]);
     assert.equal(await page.locator('#keyNote').textContent(), '이 곡은 현재 4 KEY 채보만 지원합니다.');
     assert.match(await page.locator('#playBtn').getAttribute('href'), /&keys=4$/, '지원하지 않으면 4 KEY 로');
@@ -967,6 +975,7 @@ results.push('\n[4 / 6 / 8 KEY]');
     await page.locator('#readyProblem:not([hidden])').waitFor();
     assert.match(await page.locator('#readyProblem').textContent(), /이 곡은 현재 4 KEY 채보만 지원합니다\./);
     assert.equal(await page.locator('#startBtn').isDisabled(), true);
+    await page.unroute('**/songs/songs.json');
     await page.goto(`${BASE}/settings`);
     assert.deepEqual(await page.locator('#keyModeGroup label').allTextContents(), ['4 KEY', '6 KEY', '8 KEY']);
   });
@@ -978,6 +987,21 @@ results.push('\n[4 / 6 / 8 KEY]');
     }
     await page.locator('#keyModeGroup label', { hasText: '4 KEY' }).click();
   });
+  for (const lanes of [6, 8]) {
+    await check(`wony-cover-01 ${lanes} KEY: 실제 채보로 플레이 (레인 ${lanes}개, 자동 플레이 PERFECT)`, async () => {
+      await page.goto(`${BASE}/game?song=wony-cover-01&diff=hard&keys=${lanes}&autoplay=1`);
+      await page.locator('#startBtn:not([disabled])').waitFor({ timeout: 15000 });
+      assert.equal(await page.locator('#readyKeys').textContent(), `${lanes} KEY`);
+      assert.equal(await page.locator('.lane-btn').count(), lanes);
+      await page.locator('#startBtn').click();
+      await page.waitForFunction(() => window.__wonyRhythm.snapshot().judged >= 12, null, { timeout: 40000 });
+      const s = await snap(page);
+      assert.equal(s.laneCount, lanes);
+      assert.equal(s.counts.PERFECT, s.judged, JSON.stringify(s.counts));
+      assert.ok(s.lastNoteTime > 217000 && s.lastNoteTime < s.videoDuration, `곡 끝부분까지 노트 ${s.lastNoteTime}`);
+      await page.evaluate(() => window.__wonyRhythm.pause());
+    });
+  }
   await check('JS console error 없음 (KEY 모드)', async () => assert.deepEqual(errors, []));
   await context.close();
 }
