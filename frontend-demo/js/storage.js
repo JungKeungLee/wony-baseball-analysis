@@ -96,6 +96,7 @@ export function loadSettings() {
     noFail: typeof s.noFail === 'boolean' ? s.noFail : DEFAULT_SETTINGS.noFail,
     offsetMs: Number.isFinite(offset) ? Math.round(Math.min(OFFSET_RANGE.max, Math.max(OFFSET_RANGE.min, offset))) : 0,
     touchControls: ['auto', 'on', 'off'].includes(s.touchControls) ? s.touchControls : DEFAULT_SETTINGS.touchControls,
+    laneCount: normalizeLaneCount(s.laneCount ?? DEFAULT_SETTINGS.laneCount),
   };
 }
 
@@ -120,6 +121,7 @@ export function saveSettings(settings) {
     noFail: settings.noFail === true,
     offsetMs: Math.round(Number(settings.offsetMs) || 0),
     touchControls: settings.touchControls || 'auto',
+    laneCount: normalizeLaneCount(settings.laneCount),
   };
   const ok = writeJson(STORAGE_KEYS.settings, clean);
   if (ok) remove(STORAGE_KEYS.legacyKeys);

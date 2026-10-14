@@ -1,5 +1,5 @@
 -- ============================================================================
--- WONY RHYTHM — 적용 확인 (001~007 실행 후 SQL Editor 에서 실행)
+-- WONY RHYTHM — 적용 확인 (001~008 실행 후 SQL Editor 에서 실행)
 -- 데이터를 만들거나 바꾸지 않습니다 (조회만). 비밀값은 출력하지 않고 "설정됨/길이"만 봅니다.
 -- 결과의 ok 가 모두 true 면 정상. false 인 줄의 check 이름을 알려주세요.
 -- ============================================================================
@@ -110,6 +110,11 @@ with checks(check_name, ok, detail) as (
     coalesce((select p.prosecdef and p.proconfig @> array['search_path=""'] from pg_proc p
                where p.oid = to_regprocedure('public.rhythm_get_my_records_signed(text,text)')), false)
     and has_function_privilege('anon', 'public.rhythm_get_my_records_signed(text,text)', 'EXECUTE'), ''
+
+  -- 11. 008: 노트 배속 1x ~ 6x
+  union all select '008 note_speed 범위 0.5 ~ 6.0',
+    exists (select 1 from pg_constraint where conrelid = 'public.rhythm_play_records'::regclass
+             and conname = 'rhythm_play_records_note_speed_check' and pg_get_constraintdef(oid) like '%6.0%'), ''
 
   -- 8. 규칙 함수 (게임 config.js 와 같은 값인지)
   union all select 'rule: 정상 클리어 = CLEAR + NO FAIL 미사용',

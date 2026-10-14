@@ -90,7 +90,8 @@ test('기본 리듬 바: 배경 · 레인 색은 이전 그대로 + 판정선 gl
   assert.deepEqual({ ...DEFAULT_RHYTHM_THEME, palette: [...DEFAULT_RHYTHM_THEME.palette] }, {
     bgTop: '#101A33', bgBottom: '#17284D', laneEven: 'rgba(255,255,255,0.06)', laneOdd: 'rgba(255,255,255,0.035)',
     laneLine: 'rgba(255,255,255,0.12)', judgeLine: 'rgba(255,255,255,0.9)', keyLabel: 'rgba(255,255,255,0.55)',
-    pressGlow: 'rgba(255,255,255,0.55)', judgeGlow: 'rgba(255,209,102,0.45)', palette: [...LANE_PALETTE],
+    pressGlow: 'rgba(255,255,255,0.55)', judgeGlow: 'rgba(255,209,102,0.45)', laneNeon: '#7FB8FF',
+    beatLine: 'rgba(255,255,255,0.06)', measureLine: 'rgba(255,255,255,0.16)', palette: [...LANE_PALETTE],
   });
   const theme = rhythmBarTheme(createLocalSkinRepository(new MemoryStorage()));
   assert.equal(theme.id, 'default-rhythm');

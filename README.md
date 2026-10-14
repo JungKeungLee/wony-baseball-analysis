@@ -42,7 +42,20 @@ frontend-demo/songs/songs.json                     곡 등록 (가장 마지막�
 영상이 커지면 Git LFS나 외부 저장소(Supabase Storage 등)를 고려하세요. `songs.json`의 `video`/`cover`는 전체 URL도 됩니다.
 
 채보는 사람이 고치기 쉬운 초안입니다: `{"time": 7500, "lane": 0}` (time = MP4 시작 기준 ms, 같은 time이면 동시치기).
-채보의 `"laneCount"`(4 / 6 / 8, 없으면 4)가 레인 수이고 lane 은 `0 <= lane < laneCount` 입니다. 게임 UI 는 아직 4키만 쓰지만 키 설정·터치 버튼·레이아웃·생성기(`generate_chart(..., lane_count=)`)는 레인 수를 받습니다.
+채보의 `"laneCount"`(4 / 6 / 8, 없으면 4)가 레인 수이고 lane 은 `0 <= lane < laneCount` 입니다.
+
+**KEY 모드 (4 / 6 / 8 KEY, 기본 4)**: 곡 선택 · 설정 화면에서 고릅니다. 곡마다 채보가 있는 모드는 `songs.json` 의 `"laneModes"`
+(없으면 4키만)이고, 4키 채보를 6/8키로 자동 변환하지 않습니다 (없는 모드는 "이 곡은 현재 4 KEY 채보만 지원합니다." 안내).
+채보 파일: 4키 `{id}-{diff}.json`, 6/8키 `{id}-{diff}-6k.json` / `-8k.json`. 등록된 곡에 6/8키 채보 추가:
+
+```bash
+python tools/add_lane_modes.py --song demo-beat --lanes 6,8
+```
+
+기본 키: 4 KEY `← ↓ ↑ →`, 6 KEY `S D F J K L`, 8 KEY `A S D F J K L ;` (설정에서 모드별로 변경). 휴대폰 세로에서 터치 버튼이 44px 보다
+좁아지는 모드(예: 8 KEY)는 시작하지 않고 가로 화면으로 안내합니다.
+
+노트 배속: `1x · 1.5x · 2x · 3x · 4x · 6x` (노트가 내려오는 시간만. 영상/음악 `playbackRate` 는 항상 1.0).
 난이도별 최소 간격/밀도/동시치기 비율은 `tools/chart_config.py` 한 곳에서 조정합니다.
 
 ## 로그인 필수 · 온라인 기록 · 랭킹 · 츄르 (WONY PHONE 회원)
@@ -77,11 +90,11 @@ Render 환경변수 (모두 서버 전용, `RHYTHM_LINK_SECRET` 이 없으면 �
 | 경로 | 화면 |
 |---|---|
 | `/` | 홈 (🐟 츄르, 게임 시작 · 곡 선택 · 랭킹 · 스킨 상점 · 최고 기록 · 설정) |
-| `/songs` | 곡 → 난이도 → 배속 → 영상 ON/OFF → 시작 |
+| `/songs` | 곡 → 난이도 → KEY 모드 → 배속 → 영상 ON/OFF → 시작 |
 | `/game?song=wony-cover-01&diff=hard` | 플레이 |
 | `/ranking?song=…&diff=…` | 전체 랭킹 (곡 + 난이도) |
 | `/shop` | 스킨 상점 (준비 중) |
-| `/settings` | 키, 노트 배속, 영상 보기, 판정 보정, 터치 버튼, 스킨 |
+| `/settings` | KEY 모드별 키, 노트 배속, 영상 보기, 판정 보정, 터치 버튼, 스킨 |
 | `/scores` | 내 최고 기록(곡+난이도별) · 최근 플레이 (서버 기록) |
 (위 화면은 모두 로그인 필요. 세션이 없으면 같은 주소에서 로그인 안내)
 | `/health` | `{"status": "ok"}` |

@@ -3,10 +3,9 @@
 // 로그인 필수 정책: 각 브라우저는 WONY PHONE 과 같은 방식의 1회용 입장권으로 로그인한 뒤 테스트한다 (비로그인 화면도 따로 확인).
 // MP4(H.264/AAC)를 재생해야 하므로 Playwright 기본 Chromium(코덱 없음) 대신 Chrome/Edge 실행 파일을 지정한다.
 // FULL_SONG=1 이면 데모곡 EASY 를 끝까지 자동 플레이해 결과 화면까지 확인한다 (약 45초).
-import { chromium } from 'playwright';
+import { chromium, devices } from 'playwright';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { startServers } from './servers.mjs';
 
 const MEMBER = { id: randomUUID(), nickname: '워니팬' };
@@ -259,14 +258,15 @@ for (const vp of VIEWPORTS) {
     assert.deepEqual(mp4, [], '곡 선택 화면에서 영상 preload 금지');
     await page.locator(`.song-card[data-song="${SONG}"]`).click();
     await page.locator('#diffGroup label[data-diff="hard"]').click();
-    await page.locator('#speedGroup label', { hasText: '1.75x' }).click();
+    assert.deepEqual(await page.locator('#speedGroup label').allTextContents(), ['1x', '1.5x', '2x', '3x', '4x', '6x'], '배속 목록');
+    await page.locator('#speedGroup label', { hasText: /^3x$/ }).click();
     await page.locator('#videoOn').uncheck();
     assert.ok(await noHorizontalScroll(page));
     await page.locator('#playBtn').click();
     await page.waitForURL(/\/game\?/);
     assert.match(page.url(), new RegExp(`song=${SONG}&diff=hard`));
     await page.locator('#readySpeed').waitFor();
-    assert.equal(await page.locator('#readySpeed').textContent(), '1.75x');
+    assert.equal(await page.locator('#readySpeed').textContent(), '3x');
     assert.equal(await page.locator('#readyVideo').textContent(), 'OFF');
     assert.equal(await page.locator('#readyDiff').textContent(), 'HARD');
     // 다음 테스트를 위해 기본값으로
@@ -515,7 +515,7 @@ for (const vp of VIEWPORTS) {
     assert.equal(await page.locator('#resultTitle').textContent(), 'GAME OVER');
     assert.equal(await page.locator('#resGrade').textContent(), 'F');
     assert.equal(await page.locator('#resLife').textContent(), '0 / 3');
-    assert.match(await page.locator('#resMeta').textContent(), /HELL · 1.0x · GAME OVER/);
+    assert.match(await page.locator('#resMeta').textContent(), /HELL · 4 KEY · 1x · GAME OVER/);
     assert.match(await page.locator('#resNoSave').textContent(), /GAME OVER 기록은 최고 기록에 반영되지 않아요/);
     assert.equal(await page.locator('#resNewBest').isVisible(), false);
     assert.match(await page.locator('#resOnlineStatus').textContent(), /^GAME OVER 플레이는 온라인 랭킹에 반영되지 않습니다\./);
@@ -624,7 +624,7 @@ for (const reduce of [false, true]) {
 results.push('\n[배속 / 설정 / 곡 데이터 (1440 desktop)]');
 {
   const { context, page, errors } = await newPage(VIEWPORTS[3]);
-  for (const speed of [0.75, 1.0, 1.25, 1.5, 1.75, 2.0]) {
+  for (const speed of [1, 1.5, 2, 3, 4, 6]) {
     await check(`배속 ${speed}x: 접근 시간만 바뀌고 판정 시각/영상 속도는 동일`, async () => {
       await startGame(page, `diff=hard&autoplay=1&speed=${speed}`);
       await page.waitForFunction(() => window.__wonyRhythm.snapshot().judged >= 12, null, { timeout: 20000 });
@@ -740,7 +740,7 @@ results.push('\n[배속 / 설정 / 곡 데이터 (1440 desktop)]');
       assert.equal(await page.locator('#resultTitle').textContent(), 'CLEAR!');
       assert.equal(await page.locator('#resOnlineStatus').textContent(), '자동 플레이는 온라인 랭킹에 반영되지 않습니다.');
       assert.ok(await page.locator('#resChuru').isHidden(), '자동 플레이는 츄르 없음');
-      assert.match(await page.locator('#resMeta').textContent(), /EASY · 1\.5x · CLEAR/);
+      assert.match(await page.locator('#resMeta').textContent(), /EASY · 4 KEY · 1\.5x · CLEAR/);
       assert.match(await page.locator('#resNoSave').textContent(), /자동 플레이/);
       const keys = await storageKeys(page);
       assert.ok(keys.every(k => ALLOWED_STORAGE.includes(k)), `localStorage 에는 설정만: ${keys}`);
@@ -754,27 +754,77 @@ results.push('\n[배속 / 설정 / 곡 데이터 (1440 desktop)]');
   await context.close();
 }
 
-// 6키 / 8키: UI 에는 아직 노출하지 않지만 채보의 laneCount 만으로 동작해야 한다 (자동 생성기로 만든 실제 채보 사용)
-results.push('\n[6키 / 8키 구조 (채보 laneCount)]');
-for (const lanes of [6, 8]) {
-  const fixture = readFileSync(new URL(`./fixtures/demo-beat-hard-${lanes}k.json`, import.meta.url), 'utf-8');
-  const labels = { 6: 'S D F J K L', 8: 'A S D F J K L ;' }[lanes];
+// 4 / 6 / 8 KEY: 곡 선택 → KEY 모드 → 실제 6/8키 채보 (tools/add_lane_modes.py 로 만든 demo-beat 채보)
+results.push('\n[4 / 6 / 8 KEY]');
+{
+  const { context, page, errors } = await newPage(VIEWPORTS[3]);
+  await check('곡 선택: KEY 모드 [4 KEY][6 KEY][8 KEY], 채보 있는 모드만 선택, 4 KEY 전용 곡 안내', async () => {
+    await page.goto(`${BASE}/songs`);
+    await page.locator(`.song-card[data-song="demo-beat"]`).click();
+    assert.deepEqual(await page.locator('#keyGroup label').allTextContents(), ['4 KEY', '6 KEY', '8 KEY']);
+    assert.deepEqual(await page.locator('#keyGroup input').evaluateAll(els => els.map(e => e.disabled)), [false, false, false]);
+    assert.ok(await page.locator('#keyNote').isHidden());
+    await page.locator('#keyGroup label', { hasText: '6 KEY' }).click();
+    assert.match(await page.locator('#playBtn').getAttribute('href'), /&keys=6$/);
+    await page.locator('.song-card[data-song="wony-cover-01"]').click();
+    assert.deepEqual(await page.locator('#keyGroup input').evaluateAll(els => els.map(e => e.disabled)), [false, true, true]);
+    assert.equal(await page.locator('#keyNote').textContent(), '이 곡은 현재 4 KEY 채보만 지원합니다.');
+    assert.match(await page.locator('#playBtn').getAttribute('href'), /&keys=4$/, '지원하지 않으면 4 KEY 로');
+    // 주소로 직접 들어와도 4 KEY 전용 곡의 8 KEY 는 시작 불가 + 안내
+    await page.goto(`${BASE}/game?song=wony-cover-01&diff=hard&keys=8&debug=1`);
+    await page.locator('#readyProblem:not([hidden])').waitFor();
+    assert.match(await page.locator('#readyProblem').textContent(), /이 곡은 현재 4 KEY 채보만 지원합니다\./);
+    assert.equal(await page.locator('#startBtn').isDisabled(), true);
+    await page.goto(`${BASE}/settings`);
+    assert.deepEqual(await page.locator('#keyModeGroup label').allTextContents(), ['4 KEY', '6 KEY', '8 KEY']);
+  });
+  await check('설정: KEY 모드별 키 (4 ← ↓ ↑ → · 6 S D F J K L · 8 A S D F J K L ;)', async () => {
+    await page.goto(`${BASE}/settings`);
+    for (const [n, keys] of [[4, ['←', '↓', '↑', '→']], [6, ['S', 'D', 'F', 'J', 'K', 'L']], [8, ['A', 'S', 'D', 'F', 'J', 'K', 'L', ';']]]) {
+      await page.locator('#keyModeGroup label', { hasText: `${n} KEY` }).click();
+      assert.deepEqual(await page.locator('.key-btn').allTextContents(), keys, `${n} KEY`);
+    }
+    await page.locator('#keyModeGroup label', { hasText: '4 KEY' }).click();
+  });
+  await check('JS console error 없음 (KEY 모드)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+for (const lanes of [4, 6, 8]) {
+  const labels = { 4: '← ↓ ↑ →', 6: 'S D F J K L', 8: 'A S D F J K L ;' }[lanes];
   for (const vp of [VIEWPORTS[0], VIEWPORTS[1], VIEWPORTS[3]]) {
     const { context, page, errors } = await newPage(vp);
-    await page.route('**/songs/charts/demo-beat-hard.json', route => route.fulfill({ body: fixture, contentType: 'application/json' }));
-    await check(`${lanes}키 @ ${vp.name}: 레인/키/터치 버튼 ${lanes}개, 자동 플레이, 겹침·잘림 없음`, async () => {
-      await startGame(page, 'diff=hard&autoplay=1');
+    const portraitPhone = vp.mobile && vp.height > vp.width;
+    if (lanes === 8 && portraitPhone) {
+      await check(`8 KEY @ ${vp.name}: 버튼이 44px 보다 작아지는 세로 화면은 시작하지 않고 가로 화면 안내`, async () => {
+        await page.goto(`${BASE}/game?song=${SONG}&diff=hard&keys=8&debug=1`);
+        await page.locator('#readyProblem:not([hidden])').waitFor();
+        assert.match(await page.locator('#readyProblem').textContent(), /8 KEY는 이 화면에서 버튼이 너무 작아요\. 가로 화면으로 돌려주세요\./);
+        assert.equal(await page.locator('#startBtn').isDisabled(), true);
+        await page.setViewportSize({ width: vp.height, height: vp.width });   // 가로로 돌림
+        await page.locator('#startBtn:not([disabled])').waitFor({ timeout: 10000 });
+        const widths = await page.locator('.lane-btn').evaluateAll(els => els.map(e => e.getBoundingClientRect().width));
+        assert.ok(widths.every(w => w >= 44), `가로: 버튼 ${widths.map(Math.round)}`);
+        assert.deepEqual(errors, []);
+      });
+      await context.close();
+      continue;
+    }
+    await check(`${lanes} KEY @ ${vp.name}: 레인/키/터치 버튼 ${lanes}개, 자동 플레이 PERFECT, 겹침·잘림 없음`, async () => {
+      await startGame(page, `diff=hard&autoplay=1&keys=${lanes}`);
       assert.equal(await page.locator('#keyHint').textContent(), labels);
       assert.equal(await page.locator('.lane-btn').count(), lanes);
+      assert.equal(await page.locator('#readyKeys').textContent(), `${lanes} KEY`);
       if (vp.mobile) assert.equal(await page.locator('#touch').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length), lanes);
       await page.waitForFunction(() => window.__wonyRhythm.snapshot().judged >= 15, null, { timeout: 30000 });
       const s = await snap(page);
+      assert.equal(s.laneCount, lanes);
       assert.equal(s.counts.PERFECT, s.judged, JSON.stringify(s.counts));
+      assert.equal(s.playbackRate, 1);
       assert.ok(await noHorizontalScroll(page));
       if (vp.mobile) {
         const buttons = await page.locator('.lane-btn').evaluateAll(els => els.map(e => e.getBoundingClientRect().toJSON()));
         for (let i = 0; i < buttons.length; i++) {
-          assert.ok(buttons[i].right <= vp.width + 1 && buttons[i].height >= 56, `button ${i} ${JSON.stringify(buttons[i])}`);
+          assert.ok(buttons[i].right <= vp.width + 1 && buttons[i].height >= 56 && buttons[i].width >= 44, `button ${i} ${JSON.stringify(buttons[i])}`);
           if (i) assert.ok(buttons[i].left >= buttons[i - 1].right, 'lane buttons overlap');
         }
         const btn = page.locator('.lane-btn').nth(lanes - 1);
@@ -782,7 +832,7 @@ for (const lanes of [6, 8]) {
         assert.ok(await btn.evaluate(el => el.classList.contains('is-pressed')), `마지막 레인(${lanes - 1}) 터치`);
         await btn.evaluate(el => el.dispatchEvent(new PointerEvent('pointerup', { pointerId: 91, pointerType: 'touch', bubbles: true })));
       } else {
-        const lastKey = lanes === 8 ? 'Semicolon' : 'KeyL';
+        const lastKey = { 4: 'ArrowRight', 6: 'KeyL', 8: 'Semicolon' }[lanes];
         await page.keyboard.down(lastKey);
         assert.ok(await page.locator('.lane-btn').nth(lanes - 1).evaluate(el => el.classList.contains('is-pressed')), `마지막 레인 키 ${lastKey}`);
         await page.keyboard.up(lastKey);
@@ -791,6 +841,50 @@ for (const lanes of [6, 8]) {
     });
     await context.close();
   }
+}
+
+// 휴대폰 기기 프로필(UA · DPR · 터치 · 화면 크기)로: 영상 ON/OFF · 주소창 높이 변화에도 판정선 · 터치 버튼 · 하단 위치 동일
+results.push('\n[휴대폰 기기 프로필: 영상 ON/OFF 판정선 위치]');
+for (const name of ['Pixel 7', 'iPhone 13', 'Galaxy S9+']) {
+  const d = devices[name];
+  const context = await browser.newContext({ ...d, defaultBrowserType: undefined });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(String(e)));
+  await page.goto(`${BASE}/rhythm-login?ticket=${encodeURIComponent(servers.ticket(MEMBER))}&next=/`);
+  const measure = async (video, keys) => {
+    await page.goto(`${BASE}/game?song=${SONG}&diff=hard&keys=${keys}&video=${video}&debug=1`);
+    await page.locator('#startBtn').waitFor();
+    await page.waitForFunction(() => window.__wonyRhythm.snapshot().layout);
+    await page.waitForTimeout(100);
+    const s = await snap(page);
+    const touch = await page.locator('#touch').boundingBox();
+    const stage = await page.locator('#stage').boundingBox();
+    const vh = await page.evaluate(() => innerHeight);
+    return { judgeFromBottom: vh - s.layout.judgeScreenY, touchFromBottom: touch && Math.round(vh - touch.y),
+      stageBottomGap: Math.round(vh - (stage.y + stage.height)), stageTop: Math.round(stage.y), videoOff: await page.evaluate(() => document.body.classList.contains('video-off')) };
+  };
+  for (const orient of ['portrait', 'landscape']) {
+    const base = orient === 'portrait' ? d.viewport : { width: d.viewport.height, height: d.viewport.width };
+    for (const keys of orient === 'portrait' ? [4, 6] : [4, 6, 8]) {
+      await check(`${name} ${orient} ${keys} KEY: 영상 ON / OFF · 주소창 높이 변화 → 판정선 · 터치 버튼 동일`, async () => {
+        for (const bar of [0, 56]) {   // 주소창이 보일 때(높이 -56px) / 숨었을 때
+          await page.setViewportSize({ width: base.width, height: base.height - bar });
+          const on = await measure(1, keys);
+          const off = await measure(0, keys);
+          assert.equal(on.videoOff, false);
+          assert.equal(off.videoOff, true);
+          assert.ok(Math.abs(on.judgeFromBottom - off.judgeFromBottom) <= 1, `판정선 ON ${on.judgeFromBottom} / OFF ${off.judgeFromBottom} (bar ${bar})`);
+          assert.equal(on.touchFromBottom, off.touchFromBottom, `터치 버튼 ON ${on.touchFromBottom} / OFF ${off.touchFromBottom}`);
+          assert.equal(on.stageBottomGap, off.stageBottomGap, '게임 영역 아래 끝');
+          assert.ok(off.stageTop < on.stageTop || orient === 'landscape', '영상 OFF 면 레인이 위로 길어짐');
+          assert.ok(on.touchFromBottom > 0 && on.touchFromBottom < base.height * 0.25, `터치 영역은 화면 아래 ${on.touchFromBottom}`);
+        }
+      });
+    }
+  }
+  await check(`${name}: JS console error 없음`, async () => assert.deepEqual(errors, []));
+  await context.close();
 }
 
 // ── 비로그인: 모든 화면 대신 로그인 안내, 게임 · 영상은 열리지 않음 ──

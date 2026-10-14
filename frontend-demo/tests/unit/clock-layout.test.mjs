@@ -162,9 +162,10 @@ test('VideoClock: 영상이 끝나면 ended', () => {
 });
 
 test('배속 → 노트 접근 시간', () => {
-  const expected = { 0.75: 2667, 1: 2000, 1.25: 1600, 1.5: 1333, 1.75: 1143, 2: 1000 };
+  assert.deepEqual([...NOTE_SPEEDS], [1, 1.5, 2, 3, 4, 6]);
+  const expected = { 1: 2000, 1.5: 1333, 2: 1000, 3: 667, 4: 500, 6: 333 };
   for (const s of NOTE_SPEEDS) assert.equal(Math.round(approachMs(s)), expected[s], `${s}x`);
-  assert.equal(approachMs(99), 1000);
+  assert.equal(approachMs(99), 2000 / 6);
   assert.equal(approachMs(NaN), 2000);
 });
 

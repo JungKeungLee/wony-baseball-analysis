@@ -1,4 +1,4 @@
-import { DIFFICULTIES, DIFFICULTY_LABELS, RESULT_STATUS, RESULT_STATUS_LABELS } from './config.js';
+import { DIFFICULTIES, DIFFICULTY_LABELS, LANE_MODE_LABELS, RESULT_STATUS, RESULT_STATUS_LABELS } from './config.js';
 import { loadCatalog } from './catalog.js';
 import { bestOf, loadMyRecords } from './ranking.js';
 import { requireMember } from './session.js';
@@ -21,12 +21,15 @@ function badge(diff) {
 
 function render() {
   const fmt = n => (n == null ? '—' : Number(n).toLocaleString('ko-KR'));
-  list.replaceChildren(...catalog.map(song => {
+  // 곡 × KEY 모드(채보가 있는 모드)마다 표 1개. 4 KEY 만 있는 곡은 제목만
+  const cards = catalog.flatMap(song => song.laneModes.map(keys => ({ song, keys })));
+  list.replaceChildren(...cards.map(({ song, keys }) => {
     const card = document.createElement('section');
     card.className = 'card';
+    card.dataset.keys = String(keys);
     const title = document.createElement('h2');
     title.className = 'song-title';
-    title.textContent = song.title;
+    title.textContent = song.laneModes.length > 1 ? `${song.title} · ${LANE_MODE_LABELS[keys]}` : song.title;
     const table = document.createElement('table');
     table.className = 'score-table';
     table.innerHTML = '<thead><tr><th scope="col">난이도</th><th scope="col">등급</th><th scope="col">정확도</th>'
@@ -35,7 +38,7 @@ function render() {
     for (const diff of DIFFICULTIES) {
       const row = body.insertRow();
       row.insertCell().append(badge(diff));
-      const best = bestOf(records.best, song.id, diff);
+      const best = bestOf(records.best, song.id, diff, keys);
       if (!song.difficulties.includes(diff)) {
         const cell = row.insertCell();
         cell.colSpan = 4;
@@ -63,7 +66,7 @@ function render() {
     name.textContent = titles[r.songId] || r.songId;
     const meta = document.createElement('span');
     meta.className = 'muted';
-    meta.textContent = `${r.noteSpeed}x${r.noFail ? ' · NO FAIL' : ''} · ${Number(r.accuracy).toFixed(1)}% · ${Number(r.score).toLocaleString('ko-KR')}`;
+    meta.textContent = `${r.laneCount && r.laneCount !== 4 ? `${LANE_MODE_LABELS[r.laneCount]} · ` : ''}${r.noteSpeed}x${r.noFail ? ' · NO FAIL' : ''} · ${Number(r.accuracy).toFixed(1)}% · ${Number(r.score).toLocaleString('ko-KR')}`;
     const grade = document.createElement('strong');
     grade.className = 'recent-grade';
     grade.textContent = `${r.grade || '-'} · ${RESULT_STATUS_LABELS[r.status] || RESULT_STATUS_LABELS[RESULT_STATUS.CLEAR]}`;

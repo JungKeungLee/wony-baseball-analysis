@@ -41,6 +41,7 @@ export function createRenderer(canvas, theme = DEFAULT_RHYTHM_THEME) {
   let labels = [];
   let colors = paletteColors(t.palette, 4);
   let topFade = null;
+  let beatGrid = null;          // { period, startMs, endMs } 박자 가이드 (채보 bpm 기준, 표시 전용)
   const effects = [];          // { lane, grade, at, sparks: [{dx, dy}] }
   const seen = [];             // 레인별 마지막으로 효과를 만든 판정 시각 (같은 판정으로 효과를 두 번 만들지 않음)
 
@@ -87,21 +88,26 @@ export function createRenderer(canvas, theme = DEFAULT_RHYTHM_THEME) {
       c.fillStyle = lg;
       c.fill();
     }
-    // 레인 경계선: 위로 갈수록 흐려짐
-    const lineGrad = c.createLinearGradient(0, 0, 0, h);
-    lineGrad.addColorStop(0, 'rgba(255,255,255,0)');
-    lineGrad.addColorStop(0.35, t.laneLine);
-    lineGrad.addColorStop(1, t.laneLine);
-    c.strokeStyle = lineGrad;
-    c.lineWidth = 1;
-    for (let i = 0; i <= laneCount; i++) {
-      const x = fieldX + i * laneW;
-      c.beginPath();
-      c.moveTo(xAt(x, 0), 0);
-      c.lineTo(xAt(x, judgeY), judgeY);
-      c.lineTo(x, h);
-      c.stroke();
-    }
+    // 레인 경계: 은은한 neon (넓은 glow + 가는 심). 위는 어둡고 판정선 쪽으로 밝아짐, 바깥 테두리는 조금 더 강하게
+    const edge = (x, glowW, glowA, coreW, coreA) => {
+      for (const [w, a] of [[glowW, glowA], [coreW, coreA]]) {
+        const g = c.createLinearGradient(0, 0, 0, judgeY);
+        g.addColorStop(0, alpha(t.laneNeon, 0));
+        g.addColorStop(0.45, alpha(t.laneNeon, a * 0.45));
+        g.addColorStop(1, alpha(t.laneNeon, a));
+        c.strokeStyle = g;
+        c.lineWidth = w;
+        c.beginPath();
+        c.moveTo(xAt(x, 0), 0);
+        c.lineTo(xAt(x, judgeY), judgeY);
+        c.lineTo(x, h);
+        c.stroke();
+      }
+    };
+    c.lineCap = 'round';
+    for (let i = 1; i < laneCount; i++) edge(fieldX + i * laneW, 5, 0.1, 1.2, 0.42);
+    edge(fieldX, 10, 0.16, 2, 0.75);
+    edge(fieldX + fieldW, 10, 0.16, 2, 0.75);
     // 판정선 glow + 선
     const glow = c.createLinearGradient(0, judgeY - 26, 0, judgeY + 26);
     glow.addColorStop(0, 'rgba(255,255,255,0)');
@@ -132,6 +138,23 @@ export function createRenderer(canvas, theme = DEFAULT_RHYTHM_THEME) {
     topFade = ctx.createLinearGradient(0, 0, 0, h * 0.12);
     topFade.addColorStop(0, t.bgTop);
     topFade.addColorStop(1, alpha(t.bgTop, 0));
+  }
+
+  /** 박자선은 노트와 같은 noteY 로 내려온다 (마디 첫 박은 조금 더 밝게). 노트보다 먼저 그려 노트를 가리지 않음 */
+  function drawBeatGrid(songTime, scrollMs) {
+    const { period, startMs, endMs } = beatGrid;
+    const { fieldX, fieldW, judgeY } = layout;
+    const first = Math.max(0, Math.ceil((songTime - startMs) / period));
+    for (let k = first; ; k++) {
+      const time = startMs + k * period;
+      if (time > endMs || time - songTime > scrollMs) break;
+      const y = noteY(time, songTime, layout, scrollMs);
+      if (y > judgeY) continue;
+      const measure = k % 4 === 0;
+      ctx.fillStyle = measure ? t.measureLine : t.beatLine;
+      const x0 = xAt(fieldX, y);
+      ctx.fillRect(x0, y - (measure ? 1 : 0.5), xAt(fieldX + fieldW, y) - x0, measure ? 2 : 1);
+    }
   }
 
   function spawn(lane, grade, at) {
@@ -192,6 +215,14 @@ export function createRenderer(canvas, theme = DEFAULT_RHYTHM_THEME) {
       paintBackground();
     },
 
+    /** 박자 · 마디 가이드 (채보의 bpm · musicStartMs). bpm 이 없으면 그리지 않음. 판정과 무관 */
+    setBeatGrid(chart) {
+      const bpm = Number(chart?.bpm);
+      beatGrid = bpm >= 40 && bpm <= 300
+        ? { period: 60000 / bpm, startMs: Number(chart.musicStartMs) || 0, endMs: Number(chart.endMs) || Infinity }
+        : null;
+    },
+
     /** 터치 버튼 등 DOM 쪽도 같은 레인 색을 쓰도록 */
     laneColors: n => paletteColors(t.palette, n),
 
@@ -207,6 +238,7 @@ export function createRenderer(canvas, theme = DEFAULT_RHYTHM_THEME) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(bg, 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (beatGrid) drawBeatGrid(songTime, scrollMs);
 
       for (let lane = 0; lane < layout.laneCount; lane++) {
         // 키 입력 순간 lane pulse: 판정선에서 위로 퍼지는 레인 색 빛

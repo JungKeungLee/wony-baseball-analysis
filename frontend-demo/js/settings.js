@@ -1,5 +1,5 @@
 // 설정 화면. 게임 화면에는 설정 UI가 없고, 게임은 시작할 때 저장된 값을 한 번 읽는다 (플레이 중 변경 불가).
-import { DEFAULT_LANE_COUNT, NOTE_SPEEDS, OFFSET_RANGE, laneColors } from './config.js';
+import { LANE_MODE_LABELS, NOTE_SPEEDS, OFFSET_RANGE, SUPPORTED_LANE_COUNTS, laneColors } from './config.js';
 import { assignKey, keyLabel } from './keys.js';
 import { keysFor, loadSettings, resetSettings, saveSettings, withKeysFor } from './storage.js';
 import { EQUIP_ERRORS, SKIN_TYPES, createLocalSkinRepository, equipSkin, equippedSkins, getSkin, ownedSkinIds } from './skins.js';
@@ -9,15 +9,14 @@ import { applyUiSkin } from './theme.js';
 applyUiSkin();
 requireMember();   // 로그인 필수 (세션이 만료됐으면 로그인 안내로)
 
-// 지금은 4키 설정만 화면에 보인다. 6키/8키 선택 UI 를 붙이면 이 값만 바꾸면 된다.
-const laneCount = DEFAULT_LANE_COUNT;
-const colors = laneColors(laneCount);
-
+// KEY 모드(4 / 6 / 8)마다 따로 키를 저장한다. 여기서 고른 모드가 곡 선택 화면의 기본 KEY 모드가 된다.
 let settings = loadSettings();
+let laneCount = settings.laneCount;
 let listening = -1;
 const rows = document.getElementById('keyRows');
 const status = document.getElementById('keyStatus');
 const buttons = [];
+const modeGroup = document.getElementById('keyModeGroup');
 
 function say(message, kind = '') {
   status.textContent = message;
@@ -40,7 +39,16 @@ function stopListening(message, kind) {
   if (message) say(message, kind);
 }
 
-for (let lane = 0; lane < laneCount; lane++) {
+function buildRows() {
+  const colors = laneColors(laneCount);
+  buttons.length = 0;
+  rows.replaceChildren();
+  rows.dataset.lanes = String(laneCount);
+  for (let lane = 0; lane < laneCount; lane++) buildRow(lane, colors);
+  renderKeys();
+}
+
+function buildRow(lane, colors) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'btn key-btn';
@@ -59,6 +67,27 @@ for (let lane = 0; lane < laneCount; lane++) {
   row.append(name, btn);
   rows.append(row);
 }
+
+function renderModes() {
+  modeGroup.replaceChildren(...SUPPORTED_LANE_COUNTS.map(n => {
+    const input = Object.assign(document.createElement('input'), { type: 'radio', name: 'keyMode', value: String(n), checked: n === laneCount });
+    const label = document.createElement('label');
+    label.className = 'diff-option';
+    const span = document.createElement('span');
+    span.textContent = LANE_MODE_LABELS[n];
+    label.append(input, span);
+    return label;
+  }));
+}
+
+modeGroup.addEventListener('change', e => {
+  laneCount = Number(e.target.value);
+  listening = -1;
+  settings = { ...settings, laneCount };
+  saveSettings(settings);
+  say(`${LANE_MODE_LABELS[laneCount]} 키를 설정해요.`);
+  buildRows();
+});
 
 document.addEventListener('keydown', e => {
   if (listening === -1 || e.repeat) return;
@@ -124,7 +153,10 @@ touchMode.addEventListener('change', savePlay);
 
 document.getElementById('resetBtn').addEventListener('click', () => {
   settings = resetSettings();
-  stopListening('기본값(← ↓ ↑ →)으로 되돌렸어요.', 'ok');
+  laneCount = settings.laneCount;
+  renderModes();
+  buildRows();
+  stopListening('기본값(4 KEY ← ↓ ↑ →)으로 되돌렸어요.', 'ok');
   renderPlay();
 });
 
@@ -151,6 +183,7 @@ for (const [type, id] of skinSelects) {
   });
 }
 
-renderKeys();
+renderModes();
+buildRows();
 renderPlay();
 renderSkins();

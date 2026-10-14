@@ -43,8 +43,10 @@ class Paths:
     def cover(self, song_id):
         return self.covers / f'{song_id}.webp'
 
-    def chart(self, song_id, diff):
-        return self.charts / f'{song_id}-{diff}.json'
+    def chart(self, song_id, diff, lane_count=4):
+        """4키 = {id}-{diff}.json (기존), 6/8키 = {id}-{diff}-{n}k.json (게임 js/catalog.js chartUrl 과 같은 규칙)"""
+        suffix = '' if lane_count == 4 else f'-{lane_count}k'
+        return self.charts / f'{song_id}-{diff}{suffix}.json'
 
 
 def write_json_atomic(path, data):
@@ -256,6 +258,7 @@ def remove_song(song_id, paths=None):
         if not any(s.get('id') == song_id for s in catalog['songs']):
             raise StoreError(f'등록되지 않은 곡입니다: {song_id}')
         write_json_atomic(paths.songs_json, {**catalog, 'songs': [s for s in catalog['songs'] if s.get('id') != song_id]})
-    for p in [paths.video(song_id), paths.cover(song_id), *(paths.chart(song_id, d) for d in DIFFICULTIES)]:
+    charts = [paths.chart(song_id, d, n) for d in DIFFICULTIES for n in (4, 6, 8)]
+    for p in [paths.video(song_id), paths.cover(song_id), *charts]:
         with contextlib.suppress(FileNotFoundError):
             p.unlink()

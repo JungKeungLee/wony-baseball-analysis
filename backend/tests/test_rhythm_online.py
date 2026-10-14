@@ -570,3 +570,40 @@ def test_my_records_request_is_signed():
     payload = json.loads(seen[0]['p_payload'])
     assert payload['action'] == 'records' and payload['user_id'] == USER
     assert seen[0]['p_signature'] == sign(seen[0]['p_payload'], DBS)
+
+
+# ── KEY 모드(4/6/8) · 배속 1x~6x ─────────────────────────────────────────────
+def chart_total(song, diff, lanes):
+    suffix = '' if lanes == 4 else f'-{lanes}k'
+    site = Path(__file__).resolve().parents[2] / 'frontend-demo'
+    return len(json.loads((site / 'songs' / 'charts' / f'{song}-{diff}{suffix}.json').read_text(encoding='utf-8'))['notes'])
+
+
+@pytest.mark.parametrize('lanes', [6, 8])
+def test_lane_mode_results_use_that_modes_chart(client, lanes):
+    login(client)
+    total = chart_total('demo-beat', 'hard', lanes)
+    body = row(lane_count=lanes, total_notes=total, perfect_count=total, max_combo=total, score=total * 1000)
+    res = post(client, body)
+    assert res.status_code == 200, res.text
+    assert FakeDb.calls[-1][2]['lane_count'] == lanes
+    # 4키 노트 수로 6/8키를 보내면 거절 (채보와 다름)
+    rhythm_auth._used.clear()
+    client.cookies.clear()
+    login(client, sub=str(uuid.uuid4()))
+    four = chart_total('demo-beat', 'hard', 4)
+    assert post(client, row(lane_count=lanes, total_notes=four)).status_code == 400
+
+
+def test_song_without_lane_mode_is_rejected(client):
+    login(client)
+    total = chart_total('wony-cover-01', 'hard', 4)
+    body = row(song_id='wony-cover-01', lane_count=6, total_notes=total, perfect_count=total, max_combo=total, score=total * 1000)
+    res = post(client, body)
+    assert res.status_code == 400 and res.json()['error'] == 'unknown_song', '4 KEY 채보만 있는 곡'
+
+
+@pytest.mark.parametrize('speed, code', [(1, 200), (3, 200), (4, 200), (6, 200), (0.75, 422), (1.75, 422), (2.5, 422)])
+def test_note_speed_list(client, speed, code):
+    login(client, sub=str(uuid.uuid4()))
+    assert post(client, row(note_speed=speed)).status_code == code

@@ -85,7 +85,17 @@ def test_login_page_without_phone_url_or_login_config(client, monkeypatch):
 
 @pytest.mark.parametrize('path', ['/css/app.css', '/js/game.js', '/js/clock.js', '/songs/songs.json'])
 def test_static_assets(client, path):
-    assert client.get(path).status_code == 200
+    res = client.get(path)
+    assert res.status_code == 200
+    # 배포 직후 휴대폰이 이전 CSS/JS 를 쓰지 않도록 매번 확인 (바뀌지 않았으면 304)
+    assert res.headers['cache-control'] == 'no-cache'
+    again = client.get(path, headers={'If-None-Match': res.headers['etag']})
+    assert again.status_code == 304
+
+
+def test_media_is_cached(client):
+    res = client.get('/assets/covers/demo-beat.webp')
+    assert res.status_code == 200 and res.headers['cache-control'] == 'public, max-age=86400'
 
 
 @pytest.mark.parametrize('path', ['/package.json', '/tests/browser.mjs', '/node_modules/playwright/package.json',

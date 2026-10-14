@@ -1,8 +1,9 @@
 // WONY RHYTHM 게임 상수. 판정/점수/정확도/배속은 여기 한 곳에서만 바꾼다.
 // (자동 채보 생성 규칙은 tools/chart_config.py)
 
-// 레인 수 (모드). 지금 UI 는 4키만 쓰지만 코드는 laneCount 를 받아 6키/8키로 확장할 수 있다.
+// 레인 수 = KEY 모드 (4 KEY / 6 KEY / 8 KEY). 기본 4. 곡 선택 · 설정 화면에서 고른다.
 // 레인 번호 범위: 0 <= lane < laneCount. 채보 JSON 의 laneCount 가 없으면 4.
+// 곡마다 있는 모드는 songs.json 의 laneModes (없으면 [4]). 4키 채보를 6/8키로 자동 변환하지 않는다.
 export const DEFAULT_LANE_COUNT = 4;
 export const SUPPORTED_LANE_COUNTS = Object.freeze([4, 6, 8]);
 /** @deprecated 4키 전용 코드 호환용. 새 코드는 laneCount 를 쓴다. */
@@ -11,6 +12,10 @@ export const LANES = DEFAULT_LANE_COUNT;
 export function isSupportedLaneCount(n) {
   return SUPPORTED_LANE_COUNTS.includes(n);
 }
+
+export const LANE_MODE_LABELS = Object.freeze({ 4: '4 KEY', 6: '6 KEY', 8: '8 KEY' });
+// 터치 버튼 최소 폭(px). 화면이 좁아 이보다 작아지는 모드는 가로 화면으로 안내 (플레이 불가능한 버튼은 만들지 않음)
+export const MIN_TOUCH_LANE_PX = 44;
 
 export function normalizeLaneCount(n) {
   const v = Number(n);
@@ -87,10 +92,10 @@ export function laneColors(laneCount = DEFAULT_LANE_COUNT) {
   return Array.from({ length: laneCount }, (_, i) => LANE_PALETTE[i % LANE_PALETTE.length]);
 }
 
-// 노트 배속: 노트가 화면 위에서 판정선까지 내려오는 시간(approach)만 바꾼다.
-// 영상/음악 속도(video.playbackRate)는 항상 1.0, 판정 시각도 그대로.
+// 노트 배속: 노트가 화면 위에서 판정선까지 내려오는 시간(approach)만 바꾼다. 1x = 2초, 6x = 약 0.33초.
+// 영상/음악 속도(video.playbackRate)는 항상 1.0, 판정 시각도 그대로. 목록에 없는 값은 가장 가까운 값으로 (layout.normalizeSpeed).
 export const BASE_APPROACH_MS = 2000;
-export const NOTE_SPEEDS = Object.freeze([0.75, 1.0, 1.25, 1.5, 1.75, 2.0]);
+export const NOTE_SPEEDS = Object.freeze([1.0, 1.5, 2.0, 3.0, 4.0, 6.0]);
 
 export const DEFAULT_SETTINGS = Object.freeze({
   keys: DEFAULT_KEYS,
@@ -99,6 +104,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   noFail: false,         // NO FAIL: LIFE 가 0 이 되어도 곡 끝까지 플레이 (온라인 랭킹 대상에서는 제외 예정)
   offsetMs: 0,          // 판정 보정: +면 노트가 더 늦게 도착 (블루투스 이어폰 등)
   touchControls: 'auto', // auto | on | off
+  laneCount: DEFAULT_LANE_COUNT, // 마지막으로 고른 KEY 모드 (4 / 6 / 8)
 });
 
 export const OFFSET_RANGE = Object.freeze({ min: -200, max: 200, step: 10 });

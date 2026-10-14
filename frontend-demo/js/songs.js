@@ -1,7 +1,7 @@
 // 곡 선택: 곡 → 난이도 → 배속 → 영상 ON/OFF → 게임 시작
 // 이 화면은 cover 이미지만 불러온다 (MP4 는 게임 화면에서 고른 곡 하나만 preload="metadata").
-import { DIFFICULTIES, DIFFICULTY_LABELS, NOTE_SPEEDS } from './config.js';
-import { loadCatalog, pickDifficulty } from './catalog.js';
+import { DIFFICULTIES, DIFFICULTY_LABELS, LANE_MODE_LABELS, NOTE_SPEEDS, SUPPORTED_LANE_COUNTS } from './config.js';
+import { laneModeProblem, loadCatalog, pickDifficulty, supportsLaneMode } from './catalog.js';
 import { loadLastSelection, loadSettings, saveLastSelection, updateSettings } from './storage.js';
 import { bestOf, loadMyRecords, loadRanking } from './ranking.js';
 import { requireMember } from './session.js';
@@ -16,7 +16,8 @@ let selected = null;
 let difficulty = null;
 let myBest = [];   // 서버의 내 최고 기록 (로그인 회원)
 const NO_BEST = Object.freeze({ bestScore: 0, bestGrade: null });
-const loadBestRecord = (songId, d) => bestOf(myBest, songId, d) || NO_BEST;
+let keyMode = settings.laneCount;   // 고른 KEY 모드 (곡이 지원하지 않으면 4)
+const loadBestRecord = (songId, d) => bestOf(myBest, songId, d, keyMode) || NO_BEST;
 const online = requireMember();   // 로그인 필수 (세션이 만료됐으면 로그인 안내로)
 
 function el(tag, attrs = {}, ...children) {
@@ -103,14 +104,27 @@ function updatePlay() {
     play.setAttribute('aria-disabled', 'true');
     play.classList.add('is-disabled');
   } else {
-    play.href = `/game?song=${encodeURIComponent(selected.id)}&diff=${difficulty}`;
+    play.href = `/game?song=${encodeURIComponent(selected.id)}&diff=${difficulty}&keys=${keyMode}`;
     play.removeAttribute('aria-disabled');
     play.classList.remove('is-disabled');
   }
 }
 
+/** KEY 모드: 이 곡에 채보가 있는 모드만 선택 가능 (4키 채보를 6/8키로 바꾸지 않음) */
+function renderKeyModes() {
+  if (!supportsLaneMode(selected, keyMode)) keyMode = 4;
+  $('keyGroup').replaceChildren(...SUPPORTED_LANE_COUNTS.map(n => radio('keys', String(n), LANE_MODE_LABELS[n], {
+    checked: n === keyMode, disabled: !supportsLaneMode(selected, n), sub: supportsLaneMode(selected, n) ? null : '채보 없음',
+  })));
+  const only = selected.laneModes.length < SUPPORTED_LANE_COUNTS.length ? laneModeProblem(selected, SUPPORTED_LANE_COUNTS.find(n => !supportsLaneMode(selected, n))) : null;
+  $('keyNote').textContent = only || '';
+  $('keyNote').hidden = !only;
+}
+
 function select(song, scroll) {
   selected = song;
+  keyMode = supportsLaneMode(song, settings.laneCount) ? settings.laneCount : 4;
+  renderKeyModes();
   difficulty = pickDifficulty(song, last?.song === song.id ? last.difficulty : 'normal') || null;
   for (const card of document.querySelectorAll('.song-card')) card.setAttribute('aria-pressed', String(card.dataset.song === song.id));
   $('setupTitle').textContent = `${song.title} · ${song.artist}`;
@@ -133,6 +147,13 @@ $('diffGroup').addEventListener('change', e => {
   saveLastSelection(selected.id, difficulty);
   updatePlay();
   refreshRanking();
+});
+
+$('keyGroup').addEventListener('change', e => {
+  keyMode = Number(e.target.value);
+  settings.laneCount = keyMode;
+  updateSettings({ laneCount: keyMode });
+  select(selected, false);   // 난이도별 최고 기록도 이 모드 기준으로
 });
 
 $('speedGroup').replaceChildren(...NOTE_SPEEDS.map(s => radio('speed', String(s), `${s}x`, { checked: s === settings.noteSpeed })));

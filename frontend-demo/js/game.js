@@ -3,7 +3,8 @@
 // - 게임 상태(engine)와 화면 크기(layout)는 분리: 회전/리사이즈/영상 ON·OFF 때 layout 만 다시 계산한다.
 // - 플레이 중 서버 요청 없음. 영상 파일은 선택한 곡 하나만 preload="metadata" 로 준비한다.
 import {
-  COUNTDOWN_MS, DEFAULT_LANE_COUNT, DIFFICULTIES, DIFFICULTY_LABELS, RESULT_STATUS, RESULT_STATUS_LABELS, normalizeLaneCount,
+  COUNTDOWN_MS, DEFAULT_LANE_COUNT, DIFFICULTIES, DIFFICULTY_LABELS, LANE_MODE_LABELS, MIN_TOUCH_LANE_PX, RESULT_STATUS,
+  RESULT_STATUS_LABELS, normalizeLaneCount,
 } from './config.js';
 import { findSong, loadCatalog, loadChart, loadPreviewSong, pickDifficulty } from './catalog.js';
 import { VideoClock } from './clock.js';
@@ -27,7 +28,7 @@ const params = new URLSearchParams(location.search);
 const PREVIEW = params.get('preview') || '';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const fmt = n => Math.round(n).toLocaleString('ko-KR');
-const speedText = s => `${Number(s).toFixed(2).replace(/0$/, '')}x`;
+const speedText = s => `${Number(s)}x`;
 
 // 설정은 게임 화면을 열 때 한 번만 읽는다 (게임 도중 키/배속 변경 없음).
 const settings = loadSettings();
@@ -36,6 +37,10 @@ const approach = approachMs(noteSpeed);
 let showVideo = params.has('video') ? params.get('video') !== '0' : settings.showVideo;
 let autoplay = params.get('autoplay') === '1';
 const noFail = params.has('nofail') ? params.get('nofail') === '1' : settings.noFail;
+// KEY 모드 (4 / 6 / 8): 곡 선택 화면이 &keys= 로 넘김, 없으면 설정값. 미리보기는 4키 채보만 만든다
+const laneMode = normalizeLaneCount(params.get('keys') ?? (PREVIEW ? DEFAULT_LANE_COUNT : settings.laneCount));
+let chartError = '';
+let touchNarrow = false;   // 터치 버튼이 최소 폭보다 좁아지는 화면 (예: 휴대폰 세로 8 KEY)
 
 const ui = {
   stage: $('stage'), canvas: $('field'), video: $('video'), videoMsg: $('videoMsg'), score: $('score'),
@@ -127,9 +132,31 @@ function applyLayout() {
   if (rect.width < 1 || rect.height < 1) return;
   // 판정선은 화면 아래 기준 고정 (영상 ON/OFF · 회전과 무관하게 같은 거리)
   layout = computeLayout(rect.width, rect.height, devicePixelRatio, laneCount || DEFAULT_LANE_COUNT,
-    { judgeOffset: judgeOffsetFor(innerHeight) });
+    { judgeOffset: judgeOffsetFor(stableViewportHeight()) });
   renderer.resize(layout, labels);
   draw(gameTime());
+  checkTouchFit();
+}
+
+/** 터치 버튼이 너무 작아지면 시작하지 않고 가로 화면으로 안내 (플레이할 수 없는 버튼은 만들지 않음) */
+function checkTouchFit() {
+  const btn = ui.laneButtons[0];
+  const narrow = document.body.classList.contains('show-touch') && btn ? btn.getBoundingClientRect().width < MIN_TOUCH_LANE_PX : false;
+  const portrait = innerHeight > innerWidth;
+  $('readyHint').hidden = !(document.body.classList.contains('show-touch') && portrait && laneCount >= 8 && !narrow);
+  if (narrow === touchNarrow) return;
+  touchNarrow = narrow;
+  if (phase === 'ready' && song) updateReady();
+}
+
+/**
+ * 판정선 거리 계산용 화면 높이. 휴대폰은 주소창이 나타나고 사라질 때 innerHeight 가 바뀌므로 기기 화면 크기(방향 기준)를 쓴다.
+ * (판정선은 게임 영역 아래 끝 기준이라 영상 ON/OFF 와 무관하고, 주소창 때문에 흔들리지도 않음)
+ */
+function stableViewportHeight() {
+  if (!matchMedia('(pointer: coarse)').matches || !screen?.width) return innerHeight;
+  const portrait = innerHeight >= innerWidth;
+  return Math.min(innerHeight + 200, portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height));
 }
 
 function draw(t) {
@@ -373,7 +400,7 @@ function showResult() {
   $('resultTitle').textContent = RESULT_TITLES[record.status] || 'CLEAR!';
   $('resultOverlay').classList.toggle('is-game-over', gameOver);
   $('resultOverlay').dataset.status = record.status;
-  $('resMeta').textContent = [DIFFICULTY_LABELS[difficulty], speedText(noteSpeed), RESULT_STATUS_LABELS[record.status]].join(' · ');
+  $('resMeta').textContent = [DIFFICULTY_LABELS[difficulty], LANE_MODE_LABELS[record.laneCount], speedText(noteSpeed), RESULT_STATUS_LABELS[record.status]].join(' · ');
   $('resGrade').textContent = record.grade;
   $('resGrade').dataset.grade = record.grade;
   $('resLife').textContent = `${lifeText(record.life)} / ${lifeText(record.lifeMax)}`;
@@ -427,7 +454,8 @@ function updateReady() {
   const problems = [];
   if (!song.video) problems.push('영상 준비 중');
   else if (ui.video.error) problems.push('영상을 불러오지 못했습니다');
-  if (!chart) problems.push('채보 준비 중');
+  if (!chart) problems.push(chartError || '채보 준비 중');
+  else if (touchNarrow) problems.push(`${LANE_MODE_LABELS[laneCount]}는 이 화면에서 버튼이 너무 작아요. 가로 화면으로 돌려주세요.`);
   ui.problem.textContent = problems.join(' · ');
   ui.problem.hidden = !problems.length;
   ui.start.disabled = problems.length > 0 || !videoReady || !memberReady();
@@ -441,6 +469,7 @@ function updateReady() {
   $('readyDiff').textContent = DIFFICULTY_LABELS[difficulty];
   $('readyDiff').dataset.diff = difficulty;
   $('readyNotes').textContent = chart ? fmt(chart.notes.length) : '-';
+  $('readyKeys').textContent = LANE_MODE_LABELS[laneMode];
   const bestRec = myBest && bestOf(myBest, song.id, difficulty, state?.laneCount ?? DEFAULT_LANE_COUNT);
   $('readyBest').textContent = PREVIEW || !myBest ? '-' : `${fmt(bestRec?.bestScore ?? 0)}${bestRec?.bestGrade ? ` (${bestRec.bestGrade})` : ''}`;
   if (PREVIEW) {
@@ -452,11 +481,14 @@ function updateReady() {
 async function selectDifficulty(diff) {
   difficulty = diff;
   try {
-    chart = await loadChart(song, difficulty);
-  } catch {
+    chart = await loadChart(song, difficulty, laneMode);   // 고른 KEY 모드의 채보 (laneCount 가 다르면 거절)
+    chartError = '';
+  } catch (err) {
     chart = null;
+    chartError = err.message || '채보 준비 중';   // 예: "이 곡은 현재 4 KEY 채보만 지원합니다."
   }
-  setupLanes(chart?.laneCount ?? DEFAULT_LANE_COUNT); // 채보 모드에 맞춰 키/터치 버튼/레이아웃 준비
+  setupLanes(chart?.laneCount ?? laneMode); // KEY 모드에 맞춰 키/터치 버튼/레이아웃 준비
+  renderer.setBeatGrid(chart);   // 박자 · 마디 가이드 (표시 전용)
   state = createGame(chart || { notes: [] }, { difficulty, noFail, laneCount });
   if (!PREVIEW) saveLastSelection(song.id, difficulty);
   draw(-COUNTDOWN_MS);
@@ -585,7 +617,7 @@ if (!PREVIEW) {
 
 async function init() {
   setupTouchControls();
-  setupLanes(DEFAULT_LANE_COUNT);
+  setupLanes(laneMode);
   setShowVideo(showVideo);
   $('readySpeed').textContent = speedText(noteSpeed);
   $('readyNoFail').textContent = noFail ? 'ON' : 'OFF';
@@ -624,7 +656,7 @@ if (autoplay || PREVIEW || params.has('debug')) {
       counts: state && { ...state.counts }, status: state?.status, endTime: state?.endTime,
       layout: layout && { width: layout.width, height: layout.height, landscape: layout.landscape, fieldW: layout.fieldW,
         judgeY: layout.judgeY, judgeScreenY: Math.round(ui.stage.getBoundingClientRect().top + layout.judgeY) },
-      lifeMax: state?.lifeMax, healed: state?.healed,
+      lifeMax: state?.lifeMax, healed: state?.healed, laneCount: state?.laneCount, laneMode, touchNarrow,
     }),
     pause, resume,
   };

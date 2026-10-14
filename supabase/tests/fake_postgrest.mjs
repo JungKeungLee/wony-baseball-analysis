@@ -1,5 +1,5 @@
 // 테스트 전용 가짜 Supabase REST (PostgREST 의 /rest/v1/rpc/<함수> 만 흉내).
-// PGlite(실제 Postgres)에 supabase/sql 001~004 + 006 + 007 을 적용하고, 요청을 anon 역할로 그 함수에 그대로 넘깁니다.
+// PGlite(실제 Postgres)에 supabase/sql 001~004 + 006~008 을 적용하고, 요청을 anon 역할로 그 함수에 그대로 넘깁니다.
 // → 브라우저 → WONY RHYTHM 서버 → HTTP → 실제 SQL 함수 전체 흐름을 운영 DB 없이 확인 (frontend-demo/tests/online-e2e.mjs)
 //
 //   node fake_postgrest.mjs --port 54399 --secret <RHYTHM_DB_SECRET> --members '[{"id":"…","nickname":"…"}]'
@@ -16,7 +16,7 @@ const SQL = name => readFileSync(new URL(`../sql/${name}`, import.meta.url), 'ut
 
 const db = new PGlite({ extensions: { pgcrypto } });
 await db.exec(readFileSync(new URL('./supabase_stub.sql', import.meta.url), 'utf-8'));
-for (const f of ['001_rhythm_tables.sql', '002_rhythm_indexes.sql', '003_rhythm_functions.sql', '004_rhythm_rls.sql', '006_rhythm_play_id_and_churu.sql', '007_rhythm_my_records.sql']) await db.exec(SQL(f));
+for (const f of ['001_rhythm_tables.sql', '002_rhythm_indexes.sql', '003_rhythm_functions.sql', '004_rhythm_rls.sql', '006_rhythm_play_id_and_churu.sql', '007_rhythm_my_records.sql', '008_rhythm_note_speed_6x.sql']) await db.exec(SQL(f));
 await db.query("insert into rhythm_private.settings (key, value) values ('server_hmac_secret', $1)", [args.secret]);
 for (const m of JSON.parse(args.members || '[]')) {
   await db.query('insert into auth.users (id, email) values ($1, $2)', [m.id, `${m.id}@example.com`]);

@@ -98,3 +98,28 @@ def test_stage_with_6_lanes_is_valid_and_committable(tmp_path):
     entry = song_store.commit_stage(stage, paths, tmp_path / 'staging')
     hell = json.loads(paths.chart(entry['id'], 'hell').read_text(encoding='utf-8'))
     assert hell['laneCount'] == 6 and max(n['lane'] for n in hell['notes']) <= 5
+
+
+@needs_ffmpeg
+def test_add_lane_modes_keeps_4key_and_registers_modes(tmp_path):
+    """등록된 4키 곡에 6/8키 채보 추가: 4키 채보는 그대로, songs.json laneModes [4, 6, 8], 곡 삭제 시 함께 삭제"""
+    import add_lane_modes
+    synth_media.song_wav(tmp_path / 'w.wav', total=20, music_end=19)
+    video = synth_media.make_mp4(tmp_path / 'v.mp4', tmp_path / 'w.wav', total=20)
+    paths = song_store.Paths(tmp_path / 'site')
+    stage, _ = import_song.stage_song(video, '키 모드 테스트', paths=paths, staging=tmp_path / 'staging')
+    entry = song_store.commit_stage(stage, paths, tmp_path / 'staging')
+    four = paths.chart(entry['id'], 'hard').read_bytes()
+    add_lane_modes.add_lane_modes(entry['id'], [6, 8], paths=paths, progress=lambda *a: None)
+    assert paths.chart(entry['id'], 'hard').read_bytes() == four, '4키 채보는 바꾸지 않음'
+    for n in (6, 8):
+        for d in DIFFICULTIES:
+            chart = json.loads(paths.chart(entry['id'], d, n).read_text(encoding='utf-8'))
+            assert chart['laneCount'] == n and max(x['lane'] for x in chart['notes']) < n
+            assert paths.chart(entry['id'], d, n).name == f"{entry['id']}-{d}-{n}k.json"
+    song = next(s for s in song_store.load_catalog(paths)['songs'] if s['id'] == entry['id'])
+    assert song['laneModes'] == [4, 6, 8]
+    with pytest.raises(song_store.StoreError):
+        add_lane_modes.add_lane_modes(entry['id'], [5], paths=paths, progress=lambda *a: None)
+    song_store.remove_song(entry['id'], paths)
+    assert not any(paths.charts.glob(f"{entry['id']}-*.json")), '6/8키 채보도 함께 삭제'

@@ -72,7 +72,17 @@ def legacy_demo(rest: str = ''):
     return RedirectResponse('/', status_code=301)
 
 
+# 코드 · 곡 목록은 매번 서버에 확인(ETag → 바뀌지 않았으면 304). 휴대폰 브라우저가 배포 전 CSS/JS 를
+# 추측 캐시로 계속 쓰면 화면과 코드가 어긋난다 (예: 영상 OFF 레이아웃 수정이 안 보임). 영상 · 이미지는 하루 캐시.
+REVALIDATE = {'.css', '.js', '.json', '.html', '.mjs'}
+
+
 class SiteFiles(StaticFiles):
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        res = super().file_response(full_path, stat_result, scope, status_code)
+        res.headers['Cache-Control'] = 'no-cache' if Path(full_path).suffix in REVALIDATE else 'public, max-age=86400'
+        return res
+
     def lookup_path(self, path):
         parts = Path(path).parts
         if parts and parts[0] in PUBLIC_DIRS:

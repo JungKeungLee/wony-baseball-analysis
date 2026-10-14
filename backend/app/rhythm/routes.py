@@ -31,7 +31,7 @@ from app.rhythm.supabase import DbError, RhythmDb
 
 log = logging.getLogger('uvicorn.error').getChild('rhythm')
 SITE = Path(__file__).resolve().parents[3] / 'frontend-demo'
-NOTE_SPEEDS = (0.75, 1.0, 1.25, 1.5, 1.75, 2.0)   # frontend-demo/js/config.js NOTE_SPEEDS
+NOTE_SPEEDS = (1.0, 1.5, 2.0, 3.0, 4.0, 6.0)   # frontend-demo/js/config.js NOTE_SPEEDS (DB 제약: 008)
 DIFFICULTIES = ('easy', 'normal', 'hard', 'hell')
 SUBMIT_MIN_INTERVAL = 3       # 같은 회원 저장 최소 간격(초)
 SUBMIT_MAX_PER_HOUR = 120
@@ -68,15 +68,19 @@ class ResultRow(BaseModel):
 _chart_cache = {}
 
 
-def chart_info(song_id, difficulty):
-    """(laneCount, 노트 수) 또는 None (곡/난이도 없음). 파일이 바뀌면 다시 읽음."""
+def chart_info(song_id, difficulty, lane_count=4):
+    """(laneCount, 노트 수) 또는 None (곡/난이도/KEY 모드 없음). 파일이 바뀌면 다시 읽음.
+    KEY 모드: songs.json laneModes (없으면 4키만), 채보 파일 4키 {id}-{diff}.json · 6/8키 {id}-{diff}-{n}k.json"""
     try:
         catalog_path = SITE / 'songs' / 'songs.json'
         songs = json.loads(catalog_path.read_text(encoding='utf-8')).get('songs', [])
         song = next((s for s in songs if s.get('id') == song_id), None)
         if not song or difficulty not in (song.get('difficulties') or []):
             return None
-        path = SITE / 'songs' / 'charts' / f'{song_id}-{difficulty}.json'
+        if lane_count != 4 and lane_count not in (song.get('laneModes') or []):
+            return None
+        suffix = '' if lane_count == 4 else f'-{lane_count}k'
+        path = SITE / 'songs' / 'charts' / f'{song_id}-{difficulty}{suffix}.json'
         mtime = path.stat().st_mtime
         cached = _chart_cache.get(path)
         if cached and cached[0] == mtime:
@@ -278,7 +282,7 @@ def create_router(env=None, db_factory=RhythmDb):
             return _json(422, {'ok': False, 'error': 'invalid', 'fields': sorted({str(e['loc'][0]) for e in exc.errors() if e.get('loc')})})
         if round(row.note_speed, 2) not in NOTE_SPEEDS:
             return _json(422, {'ok': False, 'error': 'invalid', 'fields': ['note_speed']})
-        info = chart_info(row.song_id, row.difficulty)
+        info = chart_info(row.song_id, row.difficulty, row.lane_count)
         if info is None:
             return _json(400, {'ok': False, 'error': 'unknown_song'})
         if info != (row.lane_count, row.total_notes):

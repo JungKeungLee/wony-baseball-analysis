@@ -25,6 +25,9 @@ export const DEFAULT_RHYTHM_THEME = Object.freeze({
   keyLabel: 'rgba(255,255,255,0.55)',
   pressGlow: 'rgba(255,255,255,0.55)',
   judgeGlow: 'rgba(255,209,102,0.45)',
+  laneNeon: '#7FB8FF',                       // 레인 경계 neon
+  beatLine: 'rgba(255,255,255,0.06)',        // 박자 가이드
+  measureLine: 'rgba(255,255,255,0.16)',     // 마디(강박) 가이드
   palette: LANE_PALETTE,
 });
 

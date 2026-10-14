@@ -669,6 +669,11 @@ select::-ms-expand { display: none; }
   cursor: pointer;
 }
 .lane-btn { border-color: var(--lane-color, rgba(255, 255, 255, 0.18)); } /* 색은 game.js 가 config.laneColors 로 지정 */
+/* 6 / 8 KEY: 버튼 글자 · 모서리만 작게 (최소 폭 44px 미만이면 game.js 가 시작 대신 가로 화면 안내) */
+body[data-lanes="6"] .lane-btn { font-size: 1.25rem; border-radius: 14px; }
+body[data-lanes="8"] .lane-btn { font-size: 1.05rem; border-radius: 12px; border-width: 2px; border-bottom-width: 4px; }
+.key-group { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.key-note { margin: 6px 0 0; font-size: 0.88rem; }
 .lane-btn.is-pressed {
   background: rgba(255, 255, 255, 0.28);
   border-bottom-width: 2px;
@@ -904,7 +909,8 @@ select::-ms-expand { display: none; }
 .skin-equip { display: grid; gap: 10px; }
 
 /* ── 전체 랭킹 화면 ── */
-.ranking-filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 8px; }
+.ranking-filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+@media (max-width: 520px) { .ranking-filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .ranking-filters #songSelect { grid-column: 1 / -1; } }
 .ranking-filters select { width: 100%; min-width: 0; }
 @media (max-width: 360px) { .ranking-filters { grid-template-columns: minmax(0, 1fr); } }
 

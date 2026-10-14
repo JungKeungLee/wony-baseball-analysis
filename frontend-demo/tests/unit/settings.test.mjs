@@ -31,17 +31,18 @@ test('wony_rhythm_settings 에 keys / noteSpeed / showVideo 저장', () => {
     assert.ok(r.ok);
     keys = r.keys;
   }
-  assert.ok(saveSettings({ ...loadSettings(), keys, noteSpeed: 1.75, showVideo: false }));
+  assert.ok(saveSettings({ ...loadSettings(), keys, noteSpeed: 3, showVideo: false }));
   const raw = JSON.parse(store.getItem('wony_rhythm_settings'));
   assert.deepEqual(raw.keys, ['KeyD', 'KeyF', 'KeyJ', 'KeyK']);
-  assert.equal(raw.noteSpeed, 1.75);
+  assert.equal(raw.noteSpeed, 3);
   assert.equal(raw.showVideo, false);
   assert.deepEqual(loadSettings().keys.map(keyLabel), ['D', 'F', 'J', 'K']);
   assert.deepEqual(['KeyZ', 'KeyX', 'Period', 'Slash'].map(keyLabel), ['Z', 'X', '.', '/']);
 });
 
-test('배속은 0.75 / 1.0 / 1.25 / 1.5 / 1.75 / 2.0 중 하나로 저장', () => {
-  for (const [input, expected] of [[0.75, 0.75], [1.3, 1.25], [9, 2], [0.1, 0.75], ['x', 1]]) {
+test('배속은 1 / 1.5 / 2 / 3 / 4 / 6 중 하나로 저장, 이전 버전 값은 가장 가까운 값으로', () => {
+  for (const [input, expected] of [[6, 6], [3, 3], [9, 6], [0.1, 1], ['x', 1],
+    [0.75, 1], [1.25, 1], [1.75, 1.5], [2.5, 2], [5, 4]]) {
     saveSettings({ ...loadSettings(), noteSpeed: input });
     assert.equal(loadSettings().noteSpeed, expected, `${input}`);
   }
@@ -134,12 +135,22 @@ test('localStorage 에는 게임 설정만 (기록 · 츄르 저장 함수 없�
 });
 
 test('이전 버전의 로컬 기록 · 비로그인 츄르는 지우고 설정은 남긴다', () => {
-  saveSettings({ ...loadSettings(), noteSpeed: 1.75 });
+  saveSettings({ ...loadSettings(), noteSpeed: 4 });
   store.setItem('wony_rhythm_scores', '{"wony-cover-01":{"hard":{"bestScore":1}}}');
   store.setItem('wony_rhythm_results', '[{"score":1}]');
   store.setItem('wonyRhythm.wallet.v1', '{"balance":30,"plays":["x"]}');
   purgeMemberData();
   for (const k of LEGACY_MEMBER_KEYS) assert.equal(store.getItem(k), null, k);
-  assert.equal(loadSettings().noteSpeed, 1.75);
+  assert.equal(loadSettings().noteSpeed, 4);
   assert.ok(STORAGE_KEYS.settings);
+});
+
+test('저장된 이전 배속(0.75 / 1.25 / 1.75)도 읽을 때 안전하게 바뀜 · KEY 모드 기본 4', () => {
+  store.setItem('wony_rhythm_settings', JSON.stringify({ noteSpeed: 1.75 }));
+  assert.equal(loadSettings().noteSpeed, 1.5);
+  store.setItem('wony_rhythm_settings', JSON.stringify({ noteSpeed: 0.75, laneCount: 7 }));
+  assert.equal(loadSettings().noteSpeed, 1);
+  assert.equal(loadSettings().laneCount, 4, '모르는 KEY 모드는 4');
+  updateSettings({ laneCount: 8 });
+  assert.equal(loadSettings().laneCount, 8);
 });

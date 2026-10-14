@@ -1,10 +1,10 @@
 // 전체 랭킹 화면: 곡 + 난이도 (배속 구분 없음). 상위 50 + 내 앞뒤 순위. 로그인 회원만 조회 가능.
-import { DIFFICULTIES, DIFFICULTY_LABELS } from './config.js';
+import { DIFFICULTIES, DIFFICULTY_LABELS, LANE_MODE_LABELS } from './config.js';
 import { findSong, loadCatalog, pickDifficulty } from './catalog.js';
 import { loadRanking } from './ranking.js';
 import { rankingProblemText, renderRankingList } from './ranking-view.js';
 import { requireMember } from './session.js';
-import { loadLastSelection } from './storage.js';
+import { loadLastSelection, loadSettings } from './storage.js';
 import { applyUiSkin } from './theme.js';
 import { renderWalletBadge, walletView } from './wallet.js';
 
@@ -20,10 +20,12 @@ const option = (value, text) => Object.assign(document.createElement('option'), 
 async function show() {
   const song = findSong(catalog, $('songSelect').value);
   const diff = $('diffSelect').value;
+  const keys = Number($('keySelect').value) || 4;
   if (!song || !diff) return;
-  history.replaceState(null, '', `/ranking?song=${encodeURIComponent(song.id)}&diff=${diff}`);
+  history.replaceState(null, '', `/ranking?song=${encodeURIComponent(song.id)}&diff=${diff}&keys=${keys}`);
   const mine = ++seq;
-  $('rankingStatus').textContent = `${song.title} · ${DIFFICULTY_LABELS[diff]} 랭킹을 불러오는 중…`;
+  const title = `${song.title} · ${DIFFICULTY_LABELS[diff]} · ${LANE_MODE_LABELS[keys]}`;
+  $('rankingStatus').textContent = `${title} 랭킹을 불러오는 중…`;
   $('rankingBody').replaceChildren();
   const status = await online;
   if (mine !== seq) return;
@@ -31,10 +33,15 @@ async function show() {
     $('rankingStatus').textContent = rankingProblemText(status.onlineEnabled ? 'login-required' : 'not-configured');
     return;
   }
-  const board = await loadRanking(song.id, diff, { laneCount: song.laneCount, limit: 50, around: 2 });
+  const board = await loadRanking(song.id, diff, { laneCount: keys, limit: 50, around: 2 });
   if (mine !== seq) return;
-  $('rankingStatus').textContent = board.ok ? `${song.title} · ${DIFFICULTY_LABELS[diff]}` : rankingProblemText(board.reason);
+  $('rankingStatus').textContent = board.ok ? title : rankingProblemText(board.reason);
   if (board.ok) $('rankingBody').replaceChildren(renderRankingList(board.rows));
+}
+
+function fillKeys(song, wanted) {
+  $('keySelect').replaceChildren(...song.laneModes.map(n => option(String(n), LANE_MODE_LABELS[n])));
+  $('keySelect').value = String(song.laneModes.includes(Number(wanted)) ? Number(wanted) : 4);
 }
 
 function fillDifficulties(song, wanted) {
@@ -59,11 +66,15 @@ async function init() {
   $('songSelect').replaceChildren(...catalog.map(s => option(s.id, s.title)));
   $('songSelect').value = song.id;
   fillDifficulties(song, params.get('diff') || last?.difficulty);
+  fillKeys(song, params.get('keys') || loadSettings().laneCount);
   $('songSelect').addEventListener('change', () => {
-    fillDifficulties(findSong(catalog, $('songSelect').value), $('diffSelect').value);
+    const next = findSong(catalog, $('songSelect').value);
+    fillDifficulties(next, $('diffSelect').value);
+    fillKeys(next, $('keySelect').value);
     show();
   });
   $('diffSelect').addEventListener('change', show);
+  $('keySelect').addEventListener('change', show);
   show();
 }
 

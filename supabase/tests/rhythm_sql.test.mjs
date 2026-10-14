@@ -13,7 +13,7 @@ import { toRankingRow } from '../../frontend-demo/js/ranking.js';
 const SQL = name => readFileSync(new URL(`../sql/${name}`, import.meta.url), 'utf-8');
 const STUB = readFileSync(new URL('./supabase_stub.sql', import.meta.url), 'utf-8');
 const POLICY = JSON.parse(readFileSync(new URL('../../shared/record_policy_cases.json', import.meta.url), 'utf-8'));
-const APPLY = ['001_rhythm_tables.sql', '002_rhythm_indexes.sql', '003_rhythm_functions.sql', '004_rhythm_rls.sql', '006_rhythm_play_id_and_churu.sql', '007_rhythm_my_records.sql'];
+const APPLY = ['001_rhythm_tables.sql', '002_rhythm_indexes.sql', '003_rhythm_functions.sql', '004_rhythm_rls.sql', '006_rhythm_play_id_and_churu.sql', '007_rhythm_my_records.sql', '008_rhythm_note_speed_6x.sql'];
 const SECRET = 'test-secret-' + 'x'.repeat(40);
 
 async function freshDb({ secret = SECRET } = {}) {
@@ -547,4 +547,16 @@ test('007 내 기록: 본인 최고 기록(정상 CLEAR) + 최근 플레이 20�
   assert.deepEqual(await myRecords(db, await addMember(db)), { best: [], recent: [] });
   await assert.rejects(myRecords(db, me, { action: 'wallet' }), /action/);
   await assert.rejects(as(db, 'anon', null, () => db.query("select public.rhythm_get_my_records_signed('{\"action\":\"records\"}', 'x')")), /invalid signature/);
+});
+
+test('008 노트 배속: 1x ~ 6x 저장 가능, 범위 밖은 거절, 6/8키 기록도 따로', async () => {
+  const db = await freshDb();
+  const me = await addMember(db);
+  for (const speed of [1, 1.5, 2, 3, 4, 6, 0.75]) {
+    assert.equal((await submit(db, me, makeRow({ speed }))).ranked, true, `${speed}x`);
+  }
+  await assert.rejects(submit(db, me, makeRow({ speed: 6.5 })), /check constraint/);
+  await submit(db, me, makeRow({ laneCount: 8, p: 10, bonus: 500 }));
+  const lanes = (await db.query('select lane_count, best_score from public.rhythm_scores where user_id = $1 order by lane_count', [me])).rows;
+  assert.deepEqual(lanes.map(r => r.lane_count), [4, 8], 'KEY 모드별 최고 기록 · 랭킹 따로');
 });
