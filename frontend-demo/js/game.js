@@ -8,21 +8,19 @@ import {
 import { findSong, loadCatalog, loadChart, loadPreviewSong, pickDifficulty } from './catalog.js';
 import { VideoClock } from './clock.js';
 import {
-  createGame, finishGame, hitLane, isFinished, pauseGame, resultRecord, resumeGame, startGame, updateGame,
+  createGame, finishGame, hitLane, isFinished, notNormalClearReason, pauseGame, resultRecord, resumeGame, startGame, updateGame,
 } from './engine.js';
-import { getOnlineStatus, isRankingEligible, loadRanking, submitRanking } from './ranking.js';
+import { bestOf, loadMyRecords, loadRanking, submitRanking } from './ranking.js';
 import { runResultOnline } from './result-online.js';
+import { requireMember } from './session.js';
 import { applyUiSkin, rhythmBarTheme } from './theme.js';
-import { grantLocalReward } from './wallet.js';
 import { formatMs } from './chart-stats.js';
 import { loadChartStats, renderStatsTable } from './preview-stats.js';
 import { createInput } from './input.js';
 import { keyLabel } from './keys.js';
-import { approachMs, computeLayout, normalizeSpeed } from './layout.js';
+import { approachMs, computeLayout, judgeOffsetFor, normalizeSpeed } from './layout.js';
 import { createRenderer } from './render.js';
-import {
-  keysFor, loadBestRecord, loadSettings, saveBestRecord, saveLastSelection, saveResult, updateSettings,
-} from './storage.js';
+import { keysFor, loadSettings, saveLastSelection, updateSettings } from './storage.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -59,7 +57,12 @@ let videoReady = false;
 // 스킨은 색만 바꾼다 (판정 · 점수 · 시계와 무관). 설정과 마찬가지로 화면을 열 때 한 번만 읽는다.
 applyUiSkin();
 const renderer = createRenderer(ui.canvas, rhythmBarTheme());
-const hud = { seq: 0, score: -1, combo: -1, countdown: null, judgementAt: 0, progress: -1, life: -1 };
+const hud = { seq: 0, score: -1, combo: -1, countdown: null, judgementAt: 0, progress: -1, life: -1, lifeMax: -1, healSeq: 0, healAt: 0 };
+const lifeText = v => String(Math.round(v * 10) / 10);
+// 화면 효과는 Web Animations(transform · opacity)만 쓰고 게임 시계와 무관 (동작 줄이기면 생략)
+const pop = (el, frames, opts) => {
+  if (!reducedMotion.matches && el.animate) el.animate(frames, opts);
+};
 
 // ---------- 레인 (채보의 laneCount 로 결정: 4 / 6 / 8) ----------
 // 키 배열·터치 버튼·입력·그리기가 모두 이 값을 따른다. 지금 채보는 모두 4키.
@@ -122,7 +125,9 @@ function pressLane(lane) {
 function applyLayout() {
   const rect = ui.stage.getBoundingClientRect();
   if (rect.width < 1 || rect.height < 1) return;
-  layout = computeLayout(rect.width, rect.height, devicePixelRatio, laneCount || DEFAULT_LANE_COUNT);
+  // 판정선은 화면 아래 기준 고정 (영상 ON/OFF · 회전과 무관하게 같은 거리)
+  layout = computeLayout(rect.width, rect.height, devicePixelRatio, laneCount || DEFAULT_LANE_COUNT,
+    { judgeOffset: judgeOffsetFor(innerHeight) });
   renderer.resize(layout, labels);
   draw(gameTime());
 }
@@ -144,18 +149,37 @@ function updateHud(t) {
     hud.score = state.score;
     ui.score.textContent = fmt(state.score);
   }
+  if (state.lifeMax !== hud.lifeMax) renderHearts();
   if (state.life !== hud.life) {
+    const dropped = hud.life >= 0 && state.life < hud.life;
     hud.life = state.life;
-    const life = Math.ceil(state.life);
-    $('lifeNum').textContent = life;
-    $('lifeBar').style.transform = `scaleX(${state.life / state.lifeMax})`;
-    $('lifeMeter').dataset.level = life > 50 ? 'high' : life > 25 ? 'mid' : 'low';
-    $('lifeMeter').setAttribute('aria-valuenow', String(life));
+    updateHearts();
+    if (dropped) pop($('lifeHearts'), [{ transform: 'translateX(-3px)' }, { transform: 'translateX(3px)' }, { transform: 'none' }], { duration: 160 });
+  }
+  const heal = state.lastHeal;
+  if (heal && heal.seq !== hud.healSeq) {   // 콤보 회복: "+0.5 LIFE" + 하트 pulse
+    hud.healSeq = heal.seq;
+    hud.healAt = performance.now();
+    $('lifeHeal').textContent = `+${lifeText(heal.amount)} LIFE`;
+    $('lifeHeal').hidden = false;
+    $('lifeMeter').classList.add('is-healing');
+    pop($('lifeHeal'), [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'translateY(-4px)', offset: 0.3 }, { opacity: 0, transform: 'translateY(-12px)' }], { duration: 900, easing: 'ease-out' });
+    pop($('lifeHearts'), [{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }], { duration: 360, easing: 'ease-out' });
+  } else if (hud.healAt && performance.now() - hud.healAt > 900) {
+    hud.healAt = 0;
+    $('lifeHeal').hidden = true;
+    $('lifeMeter').classList.remove('is-healing');
   }
   if (state.combo !== hud.combo) {
+    const up = state.combo > hud.combo;
     hud.combo = state.combo;
     ui.comboNum.textContent = state.combo;
     ui.combo.hidden = state.combo < 2;
+    const milestone = state.combo > 0 && state.combo % 10 === 0;
+    ui.combo.classList.toggle('is-milestone', milestone);
+    if (up && !ui.combo.hidden) {
+      pop(ui.comboNum, [{ transform: `scale(${milestone ? 1.4 : 1.16})` }, { transform: 'scale(1)' }], { duration: milestone ? 260 : 120, easing: 'ease-out' });
+    }
   }
   const j = state.lastJudgement;
   if (j && j.seq !== hud.seq) {
@@ -164,8 +188,10 @@ function updateHud(t) {
     ui.judgement.textContent = j.grade;
     ui.judgement.className = `judgement is-${j.grade.toLowerCase()}`;
     ui.judgement.hidden = false;
-    if (!reducedMotion.matches && ui.judgement.animate) {
-      ui.judgement.animate([{ transform: 'scale(1.15)' }, { transform: 'scale(1)' }], { duration: 120, easing: 'ease-out' });
+    if (j.grade === 'MISS') {
+      pop(ui.judgement, [{ transform: 'translateY(-6px)', opacity: 0.4 }, { transform: 'translateY(4px)' }, { transform: 'none', opacity: 1 }], { duration: 180, easing: 'ease-out' });
+    } else {
+      pop(ui.judgement, [{ transform: `scale(${j.grade === 'PERFECT' ? 1.35 : 1.2})`, opacity: 0.6 }, { transform: 'scale(1)', opacity: 1 }], { duration: 140, easing: 'ease-out' });
     }
   } else if (!ui.judgement.hidden && performance.now() - hud.judgementAt > 700) {
     ui.judgement.hidden = true;
@@ -184,9 +210,33 @@ function updateHud(t) {
 }
 
 function resetHud() {
-  Object.assign(hud, { seq: 0, score: -1, combo: -1, countdown: null, judgementAt: 0, progress: -1, life: -1 });
+  Object.assign(hud, { seq: 0, score: -1, combo: -1, countdown: null, judgementAt: 0, progress: -1, life: -1, lifeMax: -1, healSeq: 0, healAt: 0 });
   ui.judgement.hidden = true;
+  $('lifeHeal').hidden = true;
+  $('lifeMeter').classList.remove('is-healing');
   flashes.fill(null);
+}
+
+/** LIFE 하트: 최대 LIFE 개수만큼 (난이도마다 다름) */
+function renderHearts() {
+  hud.lifeMax = state.lifeMax;
+  hud.life = -1;
+  $('lifeHearts').replaceChildren(...Array.from({ length: state.lifeMax }, () => Object.assign(document.createElement('i'), { className: 'heart' })));
+  $('lifeMax').textContent = lifeText(state.lifeMax);
+  $('lifeMeter').setAttribute('aria-valuemax', String(state.lifeMax));
+  $('lifeMeter').dataset.max = String(state.lifeMax);
+}
+
+function updateHearts() {
+  const life = state.life;
+  $('lifeHearts').querySelectorAll('.heart').forEach((h, i) => {
+    h.dataset.fill = life >= i + 1 ? 'full' : life >= i + 0.5 ? 'half' : 'empty';
+  });
+  $('lifeNum').textContent = lifeText(life);
+  const ratio = life / state.lifeMax;
+  $('lifeMeter').dataset.level = ratio > 0.5 ? 'high' : ratio > 0.25 ? 'mid' : 'low';
+  $('lifeMeter').setAttribute('aria-valuenow', lifeText(life));
+  $('lifeMeter').setAttribute('aria-valuetext', `LIFE ${lifeText(life)} / ${lifeText(state.lifeMax)}`);
 }
 
 // ---------- 게임 루프 (requestAnimationFrame: 그리기만, 시간은 video 에서) ----------
@@ -248,7 +298,7 @@ function showOverlay(which) {
 // ---------- 시작 / 일시정지 / 결과 ----------
 /** 반드시 사용자 탭·클릭 안에서 호출 (모바일 자동재생 정책). */
 function begin() {
-  if (!chart || !videoReady) return;
+  if (!chart || !videoReady || !memberReady()) return;   // 로그인 확인 전 · 비로그인은 시작 불가
   stopLoop();
   clock?.stop();
   input.releaseAll();
@@ -290,6 +340,7 @@ function resume() {
   loop();
 }
 
+const RESULT_REVEAL_MS = 900;   // 결과 패널 + 등급 등장 연출 (css #resultOverlay.is-revealing)
 const RESULT_TITLES = { CLEAR: 'CLEAR!', GAME_OVER: 'GAME OVER', NO_FAIL_CLEAR: 'NO FAIL CLEAR' };
 const processedPlays = new Set();   // 같은 판(playId) 결과 처리는 1번만 (저장 · 온라인 전송 · 츄르)
 let resultSeq = 0;
@@ -315,10 +366,9 @@ function showResult() {
   };
   if (processedPlays.has(record.playId)) return;
   processedPlays.add(record.playId);
-  // 기록 정책은 storage.js 상단 표 참고. 각 저장 함수가 규칙을 직접 확인한다:
-  //   최고 기록 = 정상 CLEAR 만, 최근 기록 = AUTO/PREVIEW 제외 전부, 랭킹 · 츄르 = 정상 CLEAR 만
-  const best = saveBestRecord(record, context);
-  saveResult({ ...record, ranking: { eligible: isRankingEligible(record, context), submitted: false } }, context);
+  // 기록은 이 기기에 저장하지 않는다 (로그인 필수). 서버 저장 · 최고 기록 · 랭킹 · 츄르는 result-online.js 가 1번:
+  //   최고 기록 · 랭킹 · 츄르 = 정상 CLEAR 만, 최근 플레이 = AUTO/PREVIEW 제외 전부 (DB 가 같은 규칙으로 다시 확인)
+  const skipped = notNormalClearReason(record, context);
   const gameOver = record.status === RESULT_STATUS.GAME_OVER;
   $('resultTitle').textContent = RESULT_TITLES[record.status] || 'CLEAR!';
   $('resultOverlay').classList.toggle('is-game-over', gameOver);
@@ -326,7 +376,7 @@ function showResult() {
   $('resMeta').textContent = [DIFFICULTY_LABELS[difficulty], speedText(noteSpeed), RESULT_STATUS_LABELS[record.status]].join(' · ');
   $('resGrade').textContent = record.grade;
   $('resGrade').dataset.grade = record.grade;
-  $('resLife').textContent = fmt(Math.ceil(record.life));
+  $('resLife').textContent = `${lifeText(record.life)} / ${lifeText(record.lifeMax)}`;
   $('resScore').textContent = fmt(record.score);
   $('resCombo').textContent = fmt(record.maxCombo);
   $('resAccuracy').textContent = `${record.accuracy.toFixed(2)}%`;
@@ -334,15 +384,17 @@ function showResult() {
   $('resGREAT').textContent = fmt(record.great);
   $('resGOOD').textContent = fmt(record.good);
   $('resMISS').textContent = fmt(record.miss);
-  $('resBest').textContent = fmt(best.best.bestScore);
-  const improved = [['score', '점수'], ['grade', '등급'], ['accuracy', '정확도'], ['maxCombo', '콤보']]
-    .filter(([k]) => best.improved[k]).map(([, label]) => label);
-  $('resNewBest').textContent = `🎉 최고 ${improved.join(' · ')} 갱신!`;
-  $('resNewBest').hidden = !improved.length;
-  $('resNoSave').textContent = BEST_SKIP_TEXT[best.skipped] || '';
-  $('resNoSave').hidden = !best.skipped;
+  $('resBest').textContent = '-';           // 서버 저장 결과로 채움 (result-online.js)
+  $('resNewBest').hidden = true;
+  $('resNoSave').textContent = BEST_SKIP_TEXT[skipped] || '';
+  $('resNoSave').hidden = !skipped;
   const rankingHref = `/ranking?song=${encodeURIComponent(song.id)}&diff=${difficulty}`;
   $('resRankingLink').href = rankingHref;
+  // 1. 결과 패널 → 2. 등급 등장 (CSS transform · opacity, 동작 줄이기면 없음) → 3. 랭킹 → 4. 츄르
+  const overlay = $('resultOverlay');
+  overlay.classList.remove('is-revealing');
+  void overlay.offsetWidth;   // 연출 다시 시작 (결과 화면에서 1번, 플레이 중 아님)
+  overlay.classList.toggle('is-revealing', !reducedMotion.matches);
   showOverlay('result');
   // 결과를 먼저 보여준 뒤 온라인 랭킹 · 츄르를 비동기로 (실패해도 결과 · 로컬 기록은 그대로)
   const seq = ++resultSeq;
@@ -352,13 +404,15 @@ function showResult() {
       box: $('resOnline'), status: $('resOnlineStatus'), change: $('resRankChange'), medal: $('resRankMedal'),
       transition: $('resRankTransition'), delta: $('resRankDelta'), badges: $('resRankBadges'), ranking: $('resRanking'),
       fullRanking: $('resFullRanking'), churu: $('resChuru'), churuTitle: $('resChuruTitle'), churuAmount: $('resChuruAmount'),
-      churuFrom: $('resChuruFrom'), churuTo: $('resChuruTo'), churuNote: $('resChuruNote'),
+      churuFrom: $('resChuruFrom'), churuTo: $('resChuruTo'), churuNote: $('resChuruNote'), login: $('resLogin'),
+      best: $('resBest'), newBest: $('resNewBest'),
     },
-    deps: { submitRanking, loadRanking, grantLocalReward },
+    deps: { submitRanking, loadRanking },
     reducedMotion: reducedMotion.matches,
+    ready: new Promise(r => setTimeout(r, reducedMotion.matches ? 0 : RESULT_REVEAL_MS)),
     isCurrent: () => phase === 'result' && seq === resultSeq, // 다시 하기를 누르면 표시 중단 (저장은 이미 요청됨)
   }).catch(() => {
-    $('resOnlineStatus').textContent = '온라인 기록을 불러오지 못했습니다. 로컬 기록은 정상적으로 저장되었습니다.';
+    $('resOnlineStatus').textContent = '온라인 기록을 불러오지 못했습니다.';
   });
 }
 
@@ -376,8 +430,10 @@ function updateReady() {
   if (!chart) problems.push('채보 준비 중');
   ui.problem.textContent = problems.join(' · ');
   ui.problem.hidden = !problems.length;
-  ui.start.disabled = problems.length > 0 || !videoReady;
-  ui.start.textContent = song.video && !videoReady && !ui.video.error ? '영상 불러오는 중…' : '▶ 게임 시작';
+  ui.start.disabled = problems.length > 0 || !videoReady || !memberReady();
+  ui.start.textContent = !PREVIEW && member.state === 'checking' ? '로그인 확인 중…'
+    : song.video && !videoReady && !ui.video.error ? '영상 불러오는 중…' : '▶ 게임 시작';
+  $('readyLogin').hidden = PREVIEW || member.state !== 'none';
   ui.videoMsg.hidden = Boolean(song.video) && !ui.video.error;
   ui.videoMsg.textContent = song.video ? '영상을 불러오지 못했습니다' : '영상 준비 중';
   $('diffBadge').textContent = DIFFICULTY_LABELS[difficulty];
@@ -385,8 +441,8 @@ function updateReady() {
   $('readyDiff').textContent = DIFFICULTY_LABELS[difficulty];
   $('readyDiff').dataset.diff = difficulty;
   $('readyNotes').textContent = chart ? fmt(chart.notes.length) : '-';
-  const bestRec = loadBestRecord(song.id, difficulty);
-  $('readyBest').textContent = PREVIEW ? '-' : `${fmt(bestRec.bestScore)}${bestRec.bestGrade ? ` (${bestRec.bestGrade})` : ''}`;
+  const bestRec = myBest && bestOf(myBest, song.id, difficulty, state?.laneCount ?? DEFAULT_LANE_COUNT);
+  $('readyBest').textContent = PREVIEW || !myBest ? '-' : `${fmt(bestRec?.bestScore ?? 0)}${bestRec?.bestGrade ? ` (${bestRec.bestGrade})` : ''}`;
   if (PREVIEW) {
     for (const btn of $('previewDiffs').querySelectorAll('button')) btn.setAttribute('aria-checked', String(btn.dataset.diff === difficulty));
   }
@@ -404,6 +460,9 @@ async function selectDifficulty(diff) {
   state = createGame(chart || { notes: [] }, { difficulty, noFail, laneCount });
   if (!PREVIEW) saveLastSelection(song.id, difficulty);
   draw(-COUNTDOWN_MS);
+  renderHearts();   // 준비 화면에서도 이 난이도의 최대 LIFE 표시
+  updateHearts();
+  hud.life = state.life;
   updateReady();
 }
 
@@ -502,8 +561,27 @@ $('videoToggle').addEventListener('change', e => {
 
 new ResizeObserver(applyLayout).observe(ui.stage);
 
-// 로그인 · 온라인 상태는 시작 전에 한 번만 확인 (플레이 중에는 서버 요청 없음)
-const onlineStatus = PREVIEW || autoplay ? Promise.resolve({ onlineEnabled: false }) : getOnlineStatus();
+// 로그인 필수: 서버가 세션 없는 요청엔 이 화면 대신 로그인 안내를 보내고, 여기서 시작 전에 한 번 더 확인한다.
+// 플레이 중에는 확인하지 않는다 (세션이 만료돼도 진행 중인 판은 끝까지, 만료는 결과 저장 때 안내).
+// PREVIEW = 로컬 관리자 도구(tools/admin_server.py)의 채보 미리보기: 서버로 아무것도 보내지 않음.
+const member = { state: PREVIEW ? 'preview' : 'checking' };
+const onlineStatus = PREVIEW ? Promise.resolve({ onlineEnabled: false, loggedIn: false }) : requireMember();
+let myBest = null;   // 서버의 내 최고 기록 (준비 화면 표시용)
+function memberReady() {
+  return PREVIEW || member.state === 'ok';
+}
+if (!PREVIEW) {
+  onlineStatus.then(s => {
+    member.state = s.loggedIn ? 'ok' : 'none';
+    if (phase === 'ready') updateReady();
+    if (s.loggedIn && s.onlineEnabled) {
+      loadMyRecords().then(r => {
+        myBest = r.ok ? r.best : null;
+        if (phase === 'ready') updateReady();
+      });
+    }
+  });
+}
 
 async function init() {
   setupTouchControls();
@@ -540,11 +618,13 @@ async function init() {
 if (autoplay || PREVIEW || params.has('debug')) {
   window.__wonyRhythm = {
     snapshot: () => ({
-      phase, playId: state?.playId, life: state?.life, gameOver: state?.gameOver, resultStatus: phase === 'result' ? $('resultOverlay').dataset.status : null, noFail, time: gameTime(), videoTime: ui.video.currentTime * 1000, videoPaused: ui.video.paused,
+      phase, member: member.state, playId: state?.playId, life: state?.life, gameOver: state?.gameOver, resultStatus: phase === 'result' ? $('resultOverlay').dataset.status : null, noFail, time: gameTime(), videoTime: ui.video.currentTime * 1000, videoPaused: ui.video.paused,
       playbackRate: ui.video.playbackRate, showVideo, noteSpeed, approach, difficulty,
       score: state?.score, combo: state?.combo, maxCombo: state?.maxCombo, judged: state?.judged, total: state?.total,
       counts: state && { ...state.counts }, status: state?.status, endTime: state?.endTime,
-      layout: layout && { width: layout.width, height: layout.height, landscape: layout.landscape, fieldW: layout.fieldW },
+      layout: layout && { width: layout.width, height: layout.height, landscape: layout.landscape, fieldW: layout.fieldW,
+        judgeY: layout.judgeY, judgeScreenY: Math.round(ui.stage.getBoundingClientRect().top + layout.judgeY) },
+      lifeMax: state?.lifeMax, healed: state?.healed,
     }),
     pause, resume,
   };

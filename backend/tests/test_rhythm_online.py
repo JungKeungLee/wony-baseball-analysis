@@ -77,6 +77,19 @@ class FakeDb:
             raise DbError(FakeDb.fail)
         return FakeDb.rows
 
+    def my_records(self, user_id):
+        FakeDb.calls.append(('records', user_id))
+        if FakeDb.fail:
+            raise DbError(FakeDb.fail)
+        return {
+            'best': [{'song_id': 'demo-beat', 'difficulty': 'hard', 'lane_count': 4, 'best_score': 30000, 'best_grade': 'S+',
+                      'best_accuracy': 100, 'best_max_combo': 30, 'clear_count': 2, 'best_score_at': '2026-10-14T00:00:00Z'}],
+            'recent': [{'song_id': 'demo-beat', 'difficulty': 'hell', 'lane_count': 4, 'note_speed': 1, 'status': 'GAME_OVER',
+                        'no_fail': False, 'score': 3000, 'grade': 'F', 'accuracy': 23.08, 'max_combo': 3, 'perfect_count': 3,
+                        'great_count': 0, 'good_count': 0, 'miss_count': 10, 'total_notes': 13, 'final_life': 0,
+                        'ranked': False, 'created_at': '2026-10-14T00:05:00Z'}],
+        }
+
     def wallet(self, user_id):
         FakeDb.calls.append(('wallet', user_id))
         if FakeDb.wallet_fail:
@@ -521,3 +534,39 @@ def test_check_command_reports_without_printing_secrets(monkeypatch, capsys):
     monkeypatch.setattr(check.RhythmDb, 'ranking', boom)
     assert check.main() == 1
     assert 'RHYTHM_DB_SECRET' in capsys.readouterr().out
+
+
+# ── 내 기록 (로그인 필수: 최고 기록 · 최근 플레이는 서버에서만) ───────────────────
+def test_records_require_login_and_map_rows(client):
+    assert client.get('/api/rhythm/records').status_code == 401
+    assert FakeDb.calls == []
+    login(client)
+    res = client.get('/api/rhythm/records')
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert FakeDb.calls[-1] == ('records', USER), '세션의 회원 것만'
+    assert body['best'] == [{'songId': 'demo-beat', 'difficulty': 'hard', 'laneCount': 4, 'bestScore': 30000, 'bestGrade': 'S+',
+                             'bestAccuracy': 100, 'bestMaxCombo': 30, 'clearCount': 2, 'bestScoreAt': '2026-10-14T00:00:00Z'}]
+    assert body['recent'][0]['status'] == 'GAME_OVER' and body['recent'][0]['miss'] == 10 and body['recent'][0]['ranked'] is False
+    assert 'user_id' not in res.text and USER not in res.text
+    assert res.headers['cache-control'] == 'private, no-store'
+
+
+def test_records_failure_is_reported(client):
+    login(client)
+    FakeDb.fail = 'unavailable'
+    assert client.get('/api/rhythm/records').status_code == 502
+
+
+def test_my_records_request_is_signed():
+    seen = []
+
+    def opener(req, timeout):
+        seen.append(json.loads(req.data))
+        return FakeResponse(b'{"best": [{"song_id": "demo-beat"}, "junk"], "recent": null}')
+
+    out = RhythmDb(load_config(ENV), opener=opener).my_records(USER)
+    assert out == {'best': [{'song_id': 'demo-beat'}], 'recent': []}
+    payload = json.loads(seen[0]['p_payload'])
+    assert payload['action'] == 'records' and payload['user_id'] == USER
+    assert seen[0]['p_signature'] == sign(seen[0]['p_payload'], DBS)

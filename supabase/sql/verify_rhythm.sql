@@ -1,5 +1,5 @@
 -- ============================================================================
--- WONY RHYTHM — 적용 확인 (001~006 실행 후 SQL Editor 에서 실행)
+-- WONY RHYTHM — 적용 확인 (001~007 실행 후 SQL Editor 에서 실행)
 -- 데이터를 만들거나 바꾸지 않습니다 (조회만). 비밀값은 출력하지 않고 "설정됨/길이"만 봅니다.
 -- 결과의 ok 가 모두 true 면 정상. false 인 줄의 check 이름을 알려주세요.
 -- ============================================================================
@@ -103,6 +103,13 @@ with checks(check_name, ok, detail) as (
     exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'rhythm_wallet' and cmd = 'SELECT' and qual like '%auth.uid()%'), ''
   union all select '006 anon: 지갑 서명 함수만',
     has_function_privilege('anon', 'public.rhythm_get_wallet_signed(text,text)', 'EXECUTE'), ''
+
+  -- 10. 007: 내 기록 조회 (서명 함수)
+  union all select '007 function rhythm_get_my_records_signed', to_regprocedure('public.rhythm_get_my_records_signed(text,text)') is not null, ''
+  union all select '007 내 기록 조회: security definer + search_path, anon 은 서명 함수만',
+    coalesce((select p.prosecdef and p.proconfig @> array['search_path=""'] from pg_proc p
+               where p.oid = to_regprocedure('public.rhythm_get_my_records_signed(text,text)')), false)
+    and has_function_privilege('anon', 'public.rhythm_get_my_records_signed(text,text)', 'EXECUTE'), ''
 
   -- 8. 규칙 함수 (게임 config.js 와 같은 값인지)
   union all select 'rule: 정상 클리어 = CLEAR + NO FAIL 미사용',

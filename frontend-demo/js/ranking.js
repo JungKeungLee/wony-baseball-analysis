@@ -175,6 +175,29 @@ export async function submitRanking(record, context = {}, { retries = 1, retryDe
 }
 
 /**
+ * 내 최고 기록 · 최근 플레이 (로그인 회원, 서버에서만. 이 기기에는 저장하지 않음).
+ * @returns {Promise<{ok: boolean, best: Array<object>, recent: Array<object>, reason?: string}>}
+ *   best[i]   = { songId, difficulty, laneCount, bestScore, bestGrade, bestAccuracy, bestMaxCombo, clearCount }
+ *   recent[i] = { songId, difficulty, noteSpeed, status, noFail, score, grade, accuracy, ranked, playedAt, … }
+ */
+export async function loadMyRecords() {
+  try {
+    const r = await request('/records');
+    if (!r.ok || !Array.isArray(r.body?.best) || !Array.isArray(r.body?.recent)) {
+      return { ok: false, best: [], recent: [], reason: REASON_BY_STATUS[r.status] || 'failed' };
+    }
+    return { ok: true, best: r.body.best, recent: r.body.recent };
+  } catch {
+    return { ok: false, best: [], recent: [], reason: 'failed' };
+  }
+}
+
+/** loadMyRecords().best → 곡 · 난이도로 찾기 (4키 기준) */
+export function bestOf(best, songId, difficulty, laneCount = DEFAULT_LANE_COUNT) {
+  return best.find(b => b.songId === songId && b.difficulty === difficulty && (b.laneCount ?? DEFAULT_LANE_COUNT) === laneCount) || null;
+}
+
+/**
  * 곡 + 난이도 온라인 랭킹 (회원당 최고 기록 1줄). 로그인 회원만. 랭킹 기준 = 곡 + 난이도 (배속 구분 없음).
  * @returns {Promise<{ok: boolean, rows: Array<{rank, nickname, bestScore, bestGrade, bestAccuracy, bestMaxCombo, isMe}>, reason?: string}>}
  */

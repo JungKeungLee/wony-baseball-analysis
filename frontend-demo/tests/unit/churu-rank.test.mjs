@@ -5,10 +5,8 @@ import { CHURU_REWARDS, churuRewardFor } from '../../js/config.js';
 import { createGame, hitLane, newPlayId, resultRecord, startGame, updateGame } from '../../js/engine.js';
 import { describeRankChange, animateNumber } from '../../js/rank-change.js';
 import { isRankingEligible, loadRanking, rankingExclusionText, setFetch, submitRanking } from '../../js/ranking.js';
-import {
-  WALLET_STORAGE_KEY, grantLocalReward, isRewardEligible, loadLocalBalance, rewardFor, rewardLabel, walletText, walletView,
-} from '../../js/wallet.js';
-import { MemoryStorage } from './helpers.mjs';
+import * as wallet from '../../js/wallet.js';
+import { isRewardEligible, rewardFor, rewardLabel, walletText, walletView } from '../../js/wallet.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -100,43 +98,16 @@ test('랭킹 제외 안내 문구', () => {
   assert.equal(rankingExclusionText(record(), { preview: true }), '미리보기 플레이는 온라인 랭킹에 반영되지 않습니다.');
 });
 
-// ── 게스트 지갑 (localStorage, 기준 아님) ─────────────────────────────────────
-test('게스트 지갑: 정상 CLEAR 만 지급, 같은 playId 는 1번만', () => {
-  const storage = new MemoryStorage();
-  const r = record({ difficulty: 'hard' });
-  assert.deepEqual(grantLocalReward(r, {}, storage), { granted: true, amount: 4, balanceBefore: 0, balanceAfter: 4 });
-  const again = grantLocalReward(r, {}, storage);
-  assert.equal(again.granted, false);
-  assert.equal(again.duplicate, true);
-  assert.equal(loadLocalBalance(storage), 4);
-  grantLocalReward(record({ difficulty: 'hell' }), {}, storage);
-  assert.equal(loadLocalBalance(storage), 11);
-  for (const [rec, ctx] of [[record({ status: 'GAME_OVER' }), {}], [record({ noFail: true }), {}], [record(), { autoplay: true }], [record(), { preview: true }]]) {
-    assert.equal(grantLocalReward(rec, ctx, storage).granted, false);
-  }
-  assert.equal(loadLocalBalance(storage), 11);
-  assert.equal(grantLocalReward({ ...record(), playId: undefined }, {}, storage).reason, 'no-play-id');
-});
-
-test('게스트 지갑: 깨진 값 · 저장 실패에도 예외 없음', () => {
-  const storage = new MemoryStorage();
-  storage.setItem(WALLET_STORAGE_KEY, '{not json');
-  assert.equal(loadLocalBalance(storage), 0);
-  storage.setItem(WALLET_STORAGE_KEY, JSON.stringify({ balance: -5, plays: 'x' }));
-  assert.equal(loadLocalBalance(storage), 0);
-  const broken = { getItem: () => null, setItem: () => { throw new Error('quota'); } };
-  assert.equal(grantLocalReward(record(), {}, broken).reason, 'save-failed');
-});
-
-test('지갑 표시: 로그인 회원 = 서버 잔액, 비로그인 = 이 기기 잔액', () => {
-  const storage = new MemoryStorage();
-  grantLocalReward(record(), {}, storage);
-  assert.deepEqual(walletView({ onlineEnabled: true, loggedIn: true, churuBalance: 26 }, storage), { balance: 26, source: 'online' });
-  assert.deepEqual(walletView({ onlineEnabled: true, loggedIn: true, churuBalance: null }, storage), { balance: null, source: 'online' });
-  assert.deepEqual(walletView({ onlineEnabled: true, loggedIn: false }, storage), { balance: 4, source: 'local' });
-  assert.deepEqual(walletView({ onlineEnabled: false }, storage), { balance: 4, source: 'local' });
+// ── 츄르 지갑: 로그인 회원의 서버 잔액만 (이 기기에는 저장 · 지급하지 않음) ─────────────
+test('지갑 표시: 로그인 회원 = 서버 잔액, 비로그인 = 없음 (로컬 지급 기능 없음)', () => {
+  assert.deepEqual(walletView({ onlineEnabled: true, loggedIn: true, churuBalance: 26 }), { balance: 26 });
+  assert.deepEqual(walletView({ onlineEnabled: true, loggedIn: true, churuBalance: null }), { balance: null });
+  assert.deepEqual(walletView({ onlineEnabled: true, loggedIn: false, churuBalance: 99 }), { balance: null });
+  assert.deepEqual(walletView({ onlineEnabled: false }), { balance: null });
   assert.equal(walletText(1234), '🐟 츄르 1,234');
   assert.equal(walletText(null), '🐟 츄르 -');
+  const api = Object.keys(wallet).join(' ');
+  assert.ok(!/grantLocal|LocalBalance|WALLET_STORAGE/.test(api), api);
 });
 
 // ── play_id ────────────────────────────────────────────────────────────────

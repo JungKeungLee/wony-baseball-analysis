@@ -5,6 +5,9 @@
   GET  /api/rhythm/me                    로그인 · 온라인 기능 상태 · 츄르 잔액(로그인 회원)
   POST /api/rhythm/results               게임 결과 1건 저장 (로그인 회원, 실제 플레이만) → 순위 전/후 · 츄르 지급 결과
   GET  /api/rhythm/ranking?song&difficulty&laneCount&limit&around   곡 + 난이도 랭킹 (로그인 회원, around = 내 앞뒤 순위)
+  GET  /api/rhythm/records               내 최고 기록 · 최근 플레이 (로그인 회원)
+
+로그인 필수 정책: 게임 화면은 세션이 있어야 열리고(main.py), 기록 · 랭킹 · 츄르 API 도 세션이 없으면 401.
 
 user_id 는 요청 본문이 아니라 세션 쿠키에서만 정합니다 (본문에 user_id 가 있으면 거절).
 AUTO / PREVIEW 판은 게임이 보내지 않고, 보내더라도 여기서 거절합니다 (autoplay · preview 필드 = 허용되지 않은 필드).
@@ -144,6 +147,31 @@ def submit_response(out):
     }
 
 
+def session_member(request, env=None):
+    """유효한 WONY RHYTHM 세션의 회원 {"sub", "name"} 또는 None (로그인 기능이 꺼져 있어도 None)"""
+    c = load_config(env)
+    return read_session(request.cookies.get(COOKIE), c.link_secret) if c.login_enabled else None
+
+
+def best_row(r):
+    return {
+        'songId': r.get('song_id'), 'difficulty': r.get('difficulty'), 'laneCount': r.get('lane_count'),
+        'bestScore': r.get('best_score'), 'bestGrade': r.get('best_grade'), 'bestAccuracy': r.get('best_accuracy'),
+        'bestMaxCombo': r.get('best_max_combo'), 'clearCount': r.get('clear_count'), 'bestScoreAt': r.get('best_score_at'),
+    }
+
+
+def recent_row(r):
+    return {
+        'songId': r.get('song_id'), 'difficulty': r.get('difficulty'), 'laneCount': r.get('lane_count'),
+        'noteSpeed': r.get('note_speed'), 'status': r.get('status'), 'noFail': r.get('no_fail') is True,
+        'score': r.get('score'), 'grade': r.get('grade'), 'accuracy': r.get('accuracy'), 'maxCombo': r.get('max_combo'),
+        'perfect': r.get('perfect_count'), 'great': r.get('great_count'), 'good': r.get('good_count'),
+        'miss': r.get('miss_count'), 'totalNotes': r.get('total_notes'), 'life': r.get('final_life'),
+        'ranked': r.get('ranked') is True, 'playedAt': r.get('created_at'),
+    }
+
+
 def _json(status, body):
     return JSONResponse(body, status_code=status, headers={'Cache-Control': 'private, no-store'})
 
@@ -173,8 +201,7 @@ def create_router(env=None, db_factory=RhythmDb):
         return load_config(env)
 
     def member(request):
-        c = cfg()
-        return read_session(request.cookies.get(COOKIE), c.link_secret) if c.login_enabled else None
+        return session_member(request, env)
 
     @router.get('/rhythm-login', include_in_schema=False)
     def login(request: Request, ticket: str = '', next: str = '/'):  # noqa: A002 - 쿼리 이름
@@ -273,6 +300,20 @@ def create_router(env=None, db_factory=RhythmDb):
             if body['churu']['balanceAfter'] is not None and not body['duplicate']:
                 wallets[who['sub']] = (time.time(), body['churu']['balanceAfter'])
         return _json(200, body)
+
+    @router.get('/api/rhythm/records')
+    async def records(request: Request):
+        c = cfg()
+        who = member(request)
+        if who is None:
+            return _json(401, {'ok': False, 'error': 'login_required'})
+        if not c.online_enabled:
+            return _json(503, {'ok': False, 'error': 'not_configured'})
+        try:
+            out = await _run(lambda: db_factory(c).my_records(who['sub']))
+        except DbError as exc:
+            return _json(503 if exc.kind == 'misconfigured' else 502, {'ok': False, 'error': exc.kind})
+        return _json(200, {'ok': True, 'best': [best_row(r) for r in out['best']], 'recent': [recent_row(r) for r in out['recent']]})
 
     @router.get('/api/rhythm/ranking')
     async def ranking(request: Request, song: str = Query(pattern=r'^[a-z0-9][a-z0-9-]{1,47}$'),

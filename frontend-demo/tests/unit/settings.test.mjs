@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { DEFAULT_KEYS } from '../../js/config.js';
 import { assignKey, isTypingTarget, keyLabel } from '../../js/keys.js';
 import {
-  STORAGE_KEYS, loadSettings, resetSettings, saveSettings, setStorageBackend, updateSettings,
-  loadBestScore, saveBestScore, loadAllBestScores, clearBestScores, saveResult, loadResults,
+  LEGACY_MEMBER_KEYS, MEMBER_FREE_KEYS, STORAGE_KEYS, loadSettings, purgeMemberData, resetSettings, saveLastSelection,
+  saveSettings, setStorageBackend, updateSettings,
 } from '../../js/storage.js';
+import * as storage from '../../js/storage.js';
 import { MemoryStorage } from './helpers.mjs';
 
 let store;
@@ -110,7 +111,7 @@ test('localStorage 를 쓸 수 없어도 오류 없이 기본값', () => {
   setStorageBackend({ getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); }, removeItem() {} });
   assert.deepEqual(loadSettings().keys, [...DEFAULT_KEYS]);
   assert.equal(saveSettings(loadSettings()), false);
-  assert.deepEqual(saveBestScore('demo-beat', 'easy', 100), { best: 0, isNewBest: false, previous: 0 });
+  assert.doesNotThrow(() => purgeMemberData());
 });
 
 test('입력창에 포커스가 있으면 게임 키로 보지 않는다', () => {
@@ -122,26 +123,23 @@ test('입력창에 포커스가 있으면 게임 키로 보지 않는다', () =>
   assert.ok(!isTypingTarget(null));
 });
 
-test('최고 점수는 songId + difficulty 별 (HELL 포함), 더 높을 때만 저장', () => {
-  assert.equal(loadBestScore('wony-cover-01', 'easy'), 0);
-  assert.deepEqual(saveBestScore('wony-cover-01', 'easy', 135000), { best: 135000, isNewBest: true, previous: 0 });
-  assert.deepEqual(saveBestScore('wony-cover-01', 'easy', 9000), { best: 135000, isNewBest: false, previous: 135000 });
-  assert.equal(saveBestScore('wony-cover-01', 'easy', 135000).isNewBest, false);
-  for (const [d, v] of [['normal', 102000], ['hard', 85000], ['hell', 52000]]) saveBestScore('wony-cover-01', d, v);
-  const stored = JSON.parse(store.getItem('wony_rhythm_scores'))['wony-cover-01'];
-  assert.deepEqual(Object.fromEntries(Object.entries(stored).map(([d, r]) => [d, r.bestScore])),
-    { easy: 135000, normal: 102000, hard: 85000, hell: 52000 });
-  assert.deepEqual(loadAllBestScores()['wony-cover-01'].hell, 52000);
-  assert.equal(saveBestScore('wony-cover-01', 'hard', NaN).isNewBest, false);
+test('localStorage 에는 게임 설정만 (기록 · 츄르 저장 함수 없음)', () => {
+  saveSettings({ ...loadSettings(), noteSpeed: 1.5, showVideo: false });
+  updateSettings({ offsetMs: 20 });
+  saveLastSelection('wony-cover-01', 'hard');
+  assert.deepEqual([...store.map.keys()].sort(), ['wony_rhythm_last', 'wony_rhythm_settings']);
+  for (const k of store.map.keys()) assert.ok(MEMBER_FREE_KEYS.includes(k), k);
+  const exported = Object.keys(storage).join(' ');
+  assert.ok(!/BestRecord|BestScore|saveResult|loadResults|Churu|Wallet/i.test(exported), exported);
 });
 
-test('플레이 결과에는 실제 배속을 기록 (최근 50건)', () => {
-  const r = { songId: 'wony-cover-01', difficulty: 'hard', noteSpeed: 1.75, score: 185000, maxCombo: 213, perfect: 180, great: 21, good: 8, miss: 4, accuracy: 96.2 };
-  saveResult(r);
-  assert.deepEqual(loadResults()[0], { ...r, status: 'CLEAR' }, 'status 없는 기록은 CLEAR 로 채워 읽음');
-  for (let i = 0; i < 60; i++) saveResult({ ...r, score: i });
-  assert.equal(loadResults().length, 50);
-  assert.equal(loadResults()[0].score, 59);
-  clearBestScores();
-  assert.deepEqual(loadResults(), []);
+test('이전 버전의 로컬 기록 · 비로그인 츄르는 지우고 설정은 남긴다', () => {
+  saveSettings({ ...loadSettings(), noteSpeed: 1.75 });
+  store.setItem('wony_rhythm_scores', '{"wony-cover-01":{"hard":{"bestScore":1}}}');
+  store.setItem('wony_rhythm_results', '[{"score":1}]');
+  store.setItem('wonyRhythm.wallet.v1', '{"balance":30,"plays":["x"]}');
+  purgeMemberData();
+  for (const k of LEGACY_MEMBER_KEYS) assert.equal(store.getItem(k), null, k);
+  assert.equal(loadSettings().noteSpeed, 1.75);
+  assert.ok(STORAGE_KEYS.settings);
 });

@@ -1,13 +1,20 @@
-// 브라우저 테스트 (Playwright). 서버를 먼저 띄운 뒤 실행:
-//   cd backend && python -m uvicorn app.main:app --port 8765
-//   cd frontend-demo && WONY_BASE_URL=http://127.0.0.1:8765 CHROMIUM_PATH="<Chrome 또는 Edge 경로>" node tests/browser.mjs
+// 브라우저 테스트 (Playwright). 테스트용 서버(WONY RHYTHM + 가짜 Supabase)를 직접 띄운다 (tests/servers.mjs):
+//   cd frontend-demo && CHROMIUM_PATH="<Chrome 또는 Edge 경로>" node tests/browser.mjs   (supabase/tests 에서 npm install 필요)
+// 로그인 필수 정책: 각 브라우저는 WONY PHONE 과 같은 방식의 1회용 입장권으로 로그인한 뒤 테스트한다 (비로그인 화면도 따로 확인).
 // MP4(H.264/AAC)를 재생해야 하므로 Playwright 기본 Chromium(코덱 없음) 대신 Chrome/Edge 실행 파일을 지정한다.
 // FULL_SONG=1 이면 데모곡 EASY 를 끝까지 자동 플레이해 결과 화면까지 확인한다 (약 45초).
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { startServers } from './servers.mjs';
 
-const BASE = process.env.WONY_BASE_URL || 'http://127.0.0.1:8765';
+const MEMBER = { id: randomUUID(), nickname: '워니팬' };
+const servers = await startServers({ appPort: 8768, pgPort: 54398, members: [MEMBER] });
+const { BASE, PHONE_URL } = servers;
+// localStorage 에 남아도 되는 것 = 게임 설정만 (js/storage.js MEMBER_FREE_KEYS)
+const ALLOWED_STORAGE = ['wony_rhythm_settings', 'wony_rhythm_last', 'wonyRhythm.skins.v1'];
+const storageKeys = page => page.evaluate(() => Object.keys(localStorage).sort());
 const SONG = process.env.WONY_SONG || 'demo-beat';
 const VIEWPORTS = [
   { name: '390 portrait', width: 390, height: 844, mobile: true },
@@ -33,7 +40,7 @@ async function check(name, fn) {
   }
 }
 
-async function newPage(vp) {
+async function newPage(vp, { login = true } = {}) {
   const context = await browser.newContext({
     viewport: { width: vp.width, height: vp.height }, isMobile: vp.mobile, hasTouch: vp.mobile, deviceScaleFactor: vp.mobile ? 3 : 1,
   });
@@ -41,6 +48,9 @@ async function newPage(vp) {
   const errors = [];
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', e => errors.push(String(e)));
+  page.on('response', r => { if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url().replace(BASE, '')}`); });
+  // WONY PHONE → 리듬게임 앱 → 60초 1회용 입장권 → WONY RHYTHM 세션 쿠키
+  if (login) await page.goto(`${BASE}/rhythm-login?ticket=${encodeURIComponent(servers.ticket(MEMBER))}&next=/`);
   return { context, page, errors };
 }
 
@@ -62,12 +72,11 @@ async function smallTargets(page) {
 
 /**
  * 결과 화면 온라인 영역을 실제 모듈(result-online.js)로 실행 (서버 응답만 가짜). 게임 화면의 결과 오버레이에 그린다.
- * mode: 'member' (로그인 회원, 서버가 순위 · 츄르 결과를 돌려줌) | 'guest' (비로그인 → 이 기기 지갑) | 'fail' (서버 장애)
+ * mode: 'member' (서버가 순위 · 츄르 결과를 돌려줌) | 'expired' (저장 때 세션 만료 401) | 'fail' (서버 장애)
  */
 async function runResultDemo(page, mode, { reducedMotion = false, playId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' } = {}) {
   return page.evaluate(async ({ mode, reducedMotion, playId }) => {
     const { runResultOnline } = await import('/js/result-online.js');
-    const { grantLocalReward } = await import('/js/wallet.js');
     const $ = id => document.getElementById(id);
     for (const id of ['readyOverlay', 'pauseOverlay', 'errorOverlay']) $(id).hidden = true;
     $('resultOverlay').hidden = false;
@@ -77,10 +86,10 @@ async function runResultDemo(page, mode, { reducedMotion = false, playId = 'aaaa
     };
     const calls = [];
     const deps = {
-      grantLocalReward,
       submitRanking: async () => {
         calls.push('submit');
         if (mode === 'fail') return { submitted: false, reason: 'failed' };
+        if (mode === 'expired') return { submitted: false, reason: 'login-required' };
         return {
           submitted: true, ranked: true, duplicate: false, rankBefore: 12, rankAfter: 7, totalRanked: 40, bestBefore: 1000,
           improved: { score: true }, churu: { granted: true, amount: 4, balanceBefore: 26, balanceAfter: 30 },
@@ -98,19 +107,21 @@ async function runResultDemo(page, mode, { reducedMotion = false, playId = 'aaaa
         ] };
       },
     };
-    const online = Promise.resolve(mode === 'guest' ? { onlineEnabled: true, loggedIn: false } : { onlineEnabled: true, loggedIn: true, churuBalance: 26 });
+    const online = Promise.resolve({ onlineEnabled: true, loggedIn: true, churuBalance: 26, loginUrl: 'https://phone.example/phone' });
     const els = {
       box: $('resOnline'), status: $('resOnlineStatus'), change: $('resRankChange'), medal: $('resRankMedal'),
       transition: $('resRankTransition'), delta: $('resRankDelta'), badges: $('resRankBadges'), ranking: $('resRanking'),
       fullRanking: $('resFullRanking'), churu: $('resChuru'), churuTitle: $('resChuruTitle'), churuAmount: $('resChuruAmount'),
-      churuFrom: $('resChuruFrom'), churuTo: $('resChuruTo'), churuNote: $('resChuruNote'),
+      churuFrom: $('resChuruFrom'), churuTo: $('resChuruTo'), churuNote: $('resChuruNote'), login: $('resLogin'),
+      best: $('resBest'), newBest: $('resNewBest'),
     };
     // 연출 중간값 확인용: 순위 숫자가 처음 바뀐 시점 기록
     const seen = new Set();
     const mo = new MutationObserver(() => seen.add($('resRankTransition').textContent));
     mo.observe($('resRankTransition'), { childList: true, subtree: true, characterData: true });
     const t0 = performance.now();
-    const out = await runResultOnline({ record, context: {}, els, online, deps, reducedMotion, rankingHref: '/ranking?song=demo-beat&diff=hard' });
+    const ready = new Promise(r => setTimeout(r, reducedMotion ? 0 : 900));   // game.js 와 같은 결과 · 등급 연출 시간
+    const out = await runResultOnline({ record, context: {}, els, online, deps, reducedMotion, ready, rankingHref: '/ranking?song=demo-beat&diff=hard' });
     mo.disconnect();
     return { stage: out.stage, ms: performance.now() - t0, calls, seen: [...seen] };
   }, { mode, reducedMotion, playId });
@@ -174,8 +185,10 @@ for (const vp of VIEWPORTS) {
     assert.equal(run.stage, 'done');
     assert.deepEqual(run.calls, ['submit', 'ranking:3:2'], '저장 1번 → 상위 3 + 내 앞뒤 2명');
     assert.ok(run.ms >= 800 && run.ms < 4000, `연출 시간 ${run.ms}`);
-    assert.ok(run.seen.some(t => /^12위 → (1[01]|[89])위$/.test(t)), `중간 순위 표시 ${run.seen}`);
-    assert.equal(await page.locator('#resRankTransition').textContent(), '12위 → 7위');
+    assert.ok(run.seen.some(t => /^12위↓(1[01]|[89])위$/.test(t)), `중간 순위 표시 ${run.seen}`);
+    assert.equal(await page.locator('#resRankTransition').textContent(), '12위↓7위');   // 12위 / ↓ / 7위
+    assert.equal(await page.locator('#resRankTransition').getAttribute('aria-label'), '12위 → 7위');
+    assert.ok(run.ms >= 900, '결과 · 등급 연출 다음에 순위 (ready)');
     assert.equal(await page.locator('#resRankDelta').textContent(), '▲ 5단계 상승!');
     assert.deepEqual(await page.locator('#resRankBadges li').allTextContents(), ['🎉 TOP 10 진입!']);
     assert.equal(await page.locator('#resChuruTitle').textContent(), '🐟 HARD 클리어 보상');
@@ -205,37 +218,34 @@ for (const vp of VIEWPORTS) {
     await page.locator('#startBtn').waitFor();
     const run = await runResultDemo(page, 'member', { reducedMotion: await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches) });
     assert.ok(run.ms < 500, `즉시 ${run.ms}`);
-    assert.ok(!run.seen.some(t => /^12위 → (1[01]|[89])위$/.test(t)), `중간값 없음 ${run.seen}`);
-    assert.equal(await page.locator('#resRankTransition').textContent(), '12위 → 7위');
+    assert.ok(!run.seen.some(t => /^12위↓(1[01]|[89])위$/.test(t)), `중간값 없음 ${run.seen}`);
+    assert.equal(await page.locator('#resRankTransition').textContent(), '12위↓7위');
     assert.equal(await page.locator('#resChuruTo').textContent(), '30');
     assert.equal(await page.locator('#resRankChange').evaluate(el => el.classList.contains('is-animated')), false);
     await page.emulateMedia({ reducedMotion: 'no-preference' });
   });
 
-  await check('결과 화면 (비로그인): 이 기기 지갑에 1번만 지급, 같은 판 다시 처리해도 그대로', async () => {
+  await check('결과 화면 (세션 만료): 저장 실패 안내 + WONY PHONE 로그인 버튼, 다시 보내지 않음 · 츄르 없음', async () => {
     await page.goto(`${BASE}/game?song=${SONG}&diff=hard&debug=1`);
     await page.locator('#startBtn').waitFor();
-    await page.evaluate(() => localStorage.clear());
-    const first = await runResultDemo(page, 'guest', { reducedMotion: true });
-    assert.equal(first.stage, 'guest');
-    assert.deepEqual(first.calls, [], '비로그인은 서버 요청 없음');
-    assert.match(await page.locator('#resOnlineStatus').textContent(), /로그인하지 않아/);
-    assert.equal(await page.locator('#resChuruAmount').textContent(), '+4 츄르');
-    assert.equal(`${await page.locator('#resChuruFrom').textContent()}→${await page.locator('#resChuruTo').textContent()}`, '0→4');
-    await runResultDemo(page, 'guest', { reducedMotion: true });
-    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('wonyRhythm.wallet.v1')).balance), 4, '같은 playId 는 1번만');
-    await page.goto(`${BASE}/`);
-    await page.locator('#walletBadge:not([hidden])').waitFor();
-    assert.equal(await page.locator('#walletBadge').textContent(), '🐟 츄르 4');
-    await page.evaluate(() => localStorage.clear());
+    const run = await runResultDemo(page, 'expired', { reducedMotion: true });
+    assert.equal(run.stage, 'expired');
+    assert.deepEqual(run.calls, ['submit'], '같은 판을 다시 보내지 않음');
+    assert.equal(await page.locator('#resOnlineStatus').textContent(), '로그인 세션이 만료되었습니다.\n다시 로그인해주세요.');
+    assert.equal(await page.locator('#resOnlineStatus').innerText(), '로그인 세션이 만료되었습니다.\n다시 로그인해주세요.');
+    assert.ok(await page.locator('#resLogin').isVisible());
+    assert.equal(await page.locator('#resLogin').getAttribute('href'), 'https://phone.example/phone');
+    assert.equal(await page.locator('#resChuruNote').textContent(), '츄르 보상 처리에 실패했습니다.');
+    assert.ok(await page.locator('#resRankChange').isHidden());
+    assert.ok(await noHorizontalScroll(page));
   });
 
-  await check('결과 화면 (서버 장애): 결과 · 로컬 기록은 그대로, 온라인 · 츄르 실패 안내', async () => {
+  await check('결과 화면 (서버 장애): 결과는 그대로, 온라인 · 츄르 실패 안내', async () => {
     await page.goto(`${BASE}/game?song=${SONG}&diff=hard&debug=1`);
     await page.locator('#startBtn').waitFor();
     const run = await runResultDemo(page, 'fail', { reducedMotion: true });
     assert.equal(run.stage, 'failed');
-    assert.equal(await page.locator('#resOnlineStatus').textContent(), '온라인 기록을 불러오지 못했습니다. 로컬 기록은 정상적으로 저장되었습니다.');
+    assert.equal(await page.locator('#resOnlineStatus').textContent(), '온라인 기록을 불러오지 못했습니다.');
     assert.equal(await page.locator('#resChuruNote').textContent(), '츄르 보상 처리에 실패했습니다.');
     assert.ok(await page.locator('#resRankChange').isHidden());
     assert.ok(await page.locator('#retryBtn').isEnabled());
@@ -414,6 +424,28 @@ for (const vp of VIEWPORTS) {
     assert.ok(await page.locator('#videoPanel').isVisible());
   });
 
+  await check('판정선 · 입력 버튼: 영상 ON/OFF 와 관계없이 화면 아래 기준 같은 위치', async () => {
+    const measure = async () => {
+      const s = await snap(page);
+      const touch = await page.locator('#touch').boundingBox();
+      const stage = await box(page, '#stage');
+      return { judge: s.layout.judgeScreenY, stageBottom: Math.round(stage.y + stage.height), touch: touch && Math.round(touch.y) };
+    };
+    await page.locator('#pauseBtn').click();
+    const on = await measure();
+    await page.locator('#videoToggle').uncheck();
+    await page.waitForTimeout(150);
+    const off = await measure();
+    assert.ok(Math.abs(on.judge - off.judge) <= 1, `판정선 ON ${on.judge} / OFF ${off.judge}`);
+    assert.equal(on.stageBottom, off.stageBottom, '게임 영역 아래 끝 같음');
+    assert.equal(on.touch, off.touch, '터치 버튼 위치 같음');
+    const stageOff = await box(page, '#stage');
+    assert.ok(stageOff.y < on.judge - 100, '영상이 빠진 공간은 레인이 차지');
+    assert.ok(on.judge < vp.height && on.judge > vp.height * 0.5, `판정선은 화면 아래쪽 ${on.judge}`);
+    await page.locator('#videoToggle').check();
+    await page.locator('#resumeBtn').click();
+  });
+
   await check('앱 이탈(visibilitychange) 시 자동 일시정지, 돌아와도 자동 재생 안 함', async () => {
     await page.evaluate(() => {
       Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
@@ -431,6 +463,37 @@ for (const vp of VIEWPORTS) {
     assert.ok(await page.locator('#resumeBtn').isVisible());
   });
 
+  await check('COMBO 표시: 노트 판독을 가리지 않음 (모바일 가로는 작게 · 반투명 · 맨 위)', async () => {
+    await startGame(page, 'diff=hard&autoplay=1');
+    await page.waitForFunction(() => window.__wonyRhythm.snapshot().combo >= 5, null, { timeout: 20000 });
+    const stage = await box(page, '#stage');
+    const combo = await box(page, '#combo');
+    const style = await page.locator('#comboNum').evaluate(el => { const c = getComputedStyle(el); return { size: parseFloat(c.fontSize), color: c.color }; });
+    const mobileLandscape = vp.mobile && vp.width > vp.height && vp.height <= 500;
+    if (mobileLandscape) {
+      assert.ok(style.size <= 0.8 * 2.8 * 16 + 0.5, `가로: 기존 최대 2.8rem 대비 20% 축소 ${style.size}px`);
+      assert.match(style.color, /rgba\(255, 255, 255, 0\.6\)/, `반투명 ${style.color}`);
+      assert.ok(combo.y + combo.height <= stage.y + stage.height * 0.3, `맨 위 영역 ${combo.y + combo.height} / ${stage.y + stage.height * 0.3}`);
+    } else {
+      assert.ok(style.size >= 2.6 * 16 - 1, `PC · 세로는 기존 크기 유지 ${style.size}px`);
+    }
+    const s = await snap(page);
+    assert.equal(s.counts.PERFECT, s.judged, '표시 변경은 판정과 무관');
+    await page.evaluate(() => window.__wonyRhythm.pause());
+  });
+
+  await check('LIFE: 난이도별 최대 LIFE 하트 (EASY 10 · NORMAL 8 · HARD 5 · HELL 3)', async () => {
+    for (const [d, n] of [['easy', 10], ['normal', 8], ['hard', 5], ['hell', 3]]) {
+      await page.goto(`${BASE}/game?song=${SONG}&diff=${d}&debug=1`);
+      await page.locator('#startBtn:not([disabled])').waitFor();
+      assert.equal(await page.locator('#lifeHearts .heart').count(), n, d);
+      assert.equal(await page.locator('#lifeHearts .heart[data-fill="full"]').count(), n, d);
+      assert.equal(await page.locator('#lifeMeter .life-num').textContent(), `${n}/${n}`);
+      assert.equal(await page.locator('#lifeMeter').getAttribute('aria-valuetext'), `LIFE ${n} / ${n}`);
+      assert.ok(await noHorizontalScroll(page));
+    }
+  });
+
   await check('HUD: LIFE 게이지 표시, 곡 제목/점수와 겹치지 않음', async () => {
     const [song, life, score] = [await box(page, '.hud-song'), await box(page, '#lifeMeter'), await box(page, '.hud-score')];
     assert.ok(life && life.width > 40, 'life meter visible');
@@ -446,23 +509,19 @@ for (const vp of VIEWPORTS) {
     assert.equal(s.phase, 'result');
     assert.equal(s.gameOver, true);
     assert.equal(s.life, 0);
-    assert.equal(s.counts.MISS, 10);
+    assert.equal(s.counts.MISS, 3, 'HELL 최대 LIFE 3');
+    assert.equal(s.lifeMax, 3);
     assert.equal(s.videoPaused, true);
     assert.equal(await page.locator('#resultTitle').textContent(), 'GAME OVER');
     assert.equal(await page.locator('#resGrade').textContent(), 'F');
-    assert.equal(await page.locator('#resLife').textContent(), '0');
+    assert.equal(await page.locator('#resLife').textContent(), '0 / 3');
     assert.match(await page.locator('#resMeta').textContent(), /HELL · 1.0x · GAME OVER/);
-    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('wony_rhythm_results'))[0]);
-    assert.equal(saved.status, 'GAME_OVER');
-    assert.equal(saved.gameOver, true);
-    assert.equal(await page.evaluate(() => localStorage.getItem('wony_rhythm_scores')), null, 'GAME OVER 는 최고 기록 갱신 안 함');
     assert.match(await page.locator('#resNoSave').textContent(), /GAME OVER 기록은 최고 기록에 반영되지 않아요/);
     assert.equal(await page.locator('#resNewBest').isVisible(), false);
-    assert.equal(saved.grade, 'F');
-    assert.equal(saved.ranking.eligible, false);
-    assert.equal(await page.locator('#resOnlineStatus').textContent(), 'GAME OVER 플레이는 온라인 랭킹에 반영되지 않습니다.');
+    assert.match(await page.locator('#resOnlineStatus').textContent(), /^GAME OVER 플레이는 온라인 랭킹에 반영되지 않습니다\./);
     assert.ok(await page.locator('#resChuru').isHidden(), 'GAME OVER 는 츄르 없음');
-    assert.equal(await page.evaluate(() => localStorage.getItem('wonyRhythm.wallet.v1')), null);
+    const keys = await storageKeys(page);
+    assert.ok(keys.every(k => ALLOWED_STORAGE.includes(k)), `localStorage 에는 설정만: ${keys}`);
     assert.ok(await noHorizontalScroll(page));
     const panel = await box(page, '#resultOverlay .panel');
     assert.ok(panel.x >= 0 && panel.x + panel.width <= vp.width + 1, 'result panel inside viewport');
@@ -482,7 +541,83 @@ for (const vp of VIEWPORTS) {
     });
   }
 
+  await check('select: 높이 48px 이상 · 큰 화살표 영역 · focus 표시', async () => {
+    for (const path of ['/settings', '/ranking']) {
+      await page.goto(BASE + path);
+      const sel = page.locator('select').first();
+      await sel.waitFor();
+      const b = await sel.boundingBox();
+      assert.ok(b.height >= 48, `${path} 높이 ${b.height}`);
+      const style = await sel.evaluate(el => { const c = getComputedStyle(el); return { pr: parseFloat(c.paddingRight), font: parseFloat(c.fontSize), img: c.backgroundImage, app: c.appearance }; });
+      assert.ok(style.pr >= 44 && style.font >= 16 && style.img.includes('svg') && style.app === 'none', JSON.stringify(style));
+      await sel.focus();
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Shift+Tab');
+      assert.notEqual(await sel.evaluate(el => getComputedStyle(el).outlineStyle), 'none', 'focus 링');
+    }
+  });
+
   await check('JS console error 없음', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
+results.push('\n[콤보 LIFE 회복 · 효과 · 동작 줄이기 (1440 desktop)]');
+for (const reduce of [false, true]) {
+  const { context, page, errors } = await newPage(VIEWPORTS[3]);
+  if (reduce) await page.emulateMedia({ reducedMotion: 'reduce' });
+  await check(`실제 키 입력: MISS 1 → 10콤보 +0.5 · 20콤보 +1 LIFE, 판정 timing 그대로 (동작 줄이기 ${reduce ? 'ON' : 'OFF'})`, async () => {
+    await page.goto(`${BASE}/game?song=${SONG}&diff=hard&debug=1`);
+    await page.locator('#startBtn:not([disabled])').click();
+    // 첫 노트는 놓치고, 이후 노트는 키보드 이벤트로 정확히 침 (자동 플레이가 아닌 실제 입력 경로)
+    await page.evaluate(async () => {
+      const chart = await (await fetch('/songs/charts/demo-beat-hard.json')).json();
+      const keys = ['ArrowLeft', 'ArrowDown', 'ArrowUp', 'ArrowRight'];
+      let i = 1;
+      (function tick() {
+        const t = window.__wonyRhythm.snapshot().time;
+        while (i < chart.notes.length && chart.notes[i].time <= t + 8) {
+          const code = keys[chart.notes[i].lane];
+          dispatchEvent(new KeyboardEvent('keydown', { code, key: code }));
+          dispatchEvent(new KeyboardEvent('keyup', { code, key: code }));
+          i++;
+        }
+        if (i < 23) requestAnimationFrame(tick);
+      })();
+    });
+    await page.waitForFunction(() => window.__wonyRhythm.snapshot().combo >= 10, null, { timeout: 30000 });
+    const ten = await snap(page);
+    assert.equal(ten.counts.MISS, 1);
+    assert.equal(ten.life, 4.5, `10콤보 후 ${ten.life}`);
+    await page.locator('#lifeHearts .heart[data-fill="half"]').waitFor({ timeout: 2000 });   // HUD 는 다음 프레임에 갱신
+    assert.equal(await page.locator('#lifeHearts .heart[data-fill="half"]').count(), 1, '반 칸 하트');
+    assert.ok(await page.locator('#lifeHeal').isVisible(), '+0.5 LIFE 표시');
+    assert.equal(await page.locator('#lifeHeal').textContent(), '+0.5 LIFE');
+    await page.waitForFunction(() => window.__wonyRhythm.snapshot().combo >= 20, null, { timeout: 30000 });
+    const twenty = await snap(page);
+    assert.equal(twenty.life, 5, '20콤보 총 +1 (최대 5)');
+    assert.equal(twenty.healed, 1);
+    assert.equal(twenty.counts.PERFECT, twenty.judged - 1, `효과가 판정에 영향 없음 ${JSON.stringify(twenty.counts)}`);
+    assert.ok(Math.abs(twenty.time - twenty.videoTime) <= 60, `시계 ${twenty.time} / video ${twenty.videoTime}`);
+    if (reduce) {
+      const running = await page.evaluate(() => document.getAnimations().filter(a => a.playState === 'running').length);
+      assert.equal(running, 0, '동작 줄이기: 콤보 · 판정 · LIFE 애니메이션 없음');
+    }
+    await page.evaluate(() => window.__wonyRhythm.pause());
+  });
+  if (reduce) {
+    await check('동작 줄이기: 메인 배경 · 로고 애니메이션 정지', async () => {
+      await page.goto(`${BASE}/`);
+      const names = await page.evaluate(() => [getComputedStyle(document.body, '::before').animationName, getComputedStyle(document.querySelector('.logo-notes i')).animationName]);
+      assert.deepEqual(names, ['none', 'none']);
+    });
+  } else {
+    await check('메인: 배경 빛 · 로고 노트 애니메이션 (transform)', async () => {
+      await page.goto(`${BASE}/`);
+      const names = await page.evaluate(() => [getComputedStyle(document.body, '::before').animationName, getComputedStyle(document.querySelector('.logo-notes i')).animationName]);
+      assert.deepEqual(names, ['home-light', 'note-bounce']);
+    });
+  }
+  await check(`JS console error 없음 (동작 줄이기 ${reduce ? 'ON' : 'OFF'})`, async () => assert.deepEqual(errors, []));
   await context.close();
 }
 
@@ -511,7 +646,7 @@ results.push('\n[배속 / 설정 / 곡 데이터 (1440 desktop)]');
     const s = await snap(page);
     assert.equal(s.phase, 'playing');
     assert.equal(s.gameOver, false);
-    assert.ok(s.counts.MISS > 10, 'LIFE 0 이후에도 판정 계속');
+    assert.ok(s.counts.MISS > 3, `LIFE 0(HELL 3) 이후에도 판정 계속 ${s.counts.MISS}`);
     assert.equal(s.videoPaused, false);
     await page.goto(`${BASE}/settings`);
     await page.locator('#noFail').uncheck();
@@ -552,34 +687,39 @@ results.push('\n[배속 / 설정 / 곡 데이터 (1440 desktop)]');
     await page.unroute('**/songs/songs.json');
   });
 
-  await check('기존 localStorage 최고 점수(숫자) 호환, GAME OVER 판은 최근 기록에만', async () => {
-    await page.goto(`${BASE}/scores`);
+  await check('이전 버전 로컬 기록 · 비로그인 츄르는 지우고 설정만 남김, 최고 기록 화면은 서버 기록', async () => {
+    await page.goto(`${BASE}/settings`);
     await page.evaluate(song => {
-      localStorage.clear();
-      localStorage.setItem('wony_rhythm_scores', JSON.stringify({ [song]: { easy: 12345, hard: 'broken' } }));
-      localStorage.setItem('wony_rhythm_results', JSON.stringify([{ songId: song, difficulty: 'easy', noteSpeed: 1, score: 12345, accuracy: 88, gameOver: false, cleared: true, noFail: false }]));
+      localStorage.setItem('wony_rhythm_scores', JSON.stringify({ [song]: { easy: 12345 } }));
+      localStorage.setItem('wony_rhythm_results', JSON.stringify([{ songId: song, difficulty: 'easy', score: 12345 }]));
+      localStorage.setItem('wonyRhythm.wallet.v1', JSON.stringify({ balance: 99, plays: [] }));
     }, SONG);
-    await page.reload();
-    await page.locator('.score-table').first().waitFor();
-    const easyRow = await page.locator('.score-table tbody tr').first().allTextContents();
-    assert.match(easyRow.join(''), /12,345/);
-    assert.match(await page.locator('.recent-grade').first().textContent(), /CLEAR/);
-    await page.goto(`${BASE}/songs`);
-    assert.match(await page.locator('.song-card').first().textContent(), /EASY 12,345/);
-    // GAME OVER 한 판 → 최고 기록(이전 형식 값 포함)은 그대로, 최근 플레이에는 남음
-    const before = await page.evaluate(() => localStorage.getItem('wony_rhythm_scores'));
-    await startGame(page, 'diff=easy&debug=1');
-    await page.locator('#resultOverlay').waitFor({ state: 'visible', timeout: 60000 });
-    assert.equal((await snap(page)).resultStatus, 'GAME_OVER');
-    assert.equal(await page.evaluate(() => localStorage.getItem('wony_rhythm_scores')), before);
     await page.goto(`${BASE}/scores`);
-    assert.match((await page.locator('.score-table tbody tr').first().allTextContents()).join(''), /—.*—.*—.*12,345/);
+    await page.locator('.score-table').first().waitFor();
+    const keys = await storageKeys(page);
+    assert.ok(keys.every(k => ALLOWED_STORAGE.includes(k)), `남은 키 ${keys}`);
+    assert.ok(!(await page.locator('main').textContent()).includes('12,345'), '이전 로컬 기록은 보이지 않음');
+    // 서버 기록: 위 GAME OVER 판들이 최근 플레이에 있고, 최고 기록(정상 CLEAR 만)은 없음
+    await page.locator('.recent-grade').first().waitFor();
     assert.match(await page.locator('.recent-grade').first().textContent(), /F · GAME OVER/);
-    // 자동 플레이는 최고 기록/최근 기록 모두 남기지 않는다 (아래 FULL_SONG 테스트에서 결과 화면까지 확인)
-    await startGame(page, 'diff=normal&autoplay=1');
-    await page.waitForFunction(() => window.__wonyRhythm.snapshot().judged >= 3, null, { timeout: 20000 });
-    await page.evaluate(() => window.__wonyRhythm.pause());
-    await page.evaluate(() => localStorage.clear());
+    assert.ok((await page.locator('.best-grade').allTextContents()).every(t => t === '—'), '정상 CLEAR 가 없으므로 최고 기록 없음');
+    assert.equal(await page.locator('#clearBtn').count(), 0, '서버 기록은 이 화면에서 지우지 않음');
+    await page.goto(`${BASE}/`);
+    await page.locator('#walletBadge:not([hidden])').waitFor();
+    assert.equal(await page.locator('#walletBadge').textContent(), '🐟 츄르 0', '비로그인 츄르 99 는 사용하지 않음');
+  });
+
+  await check('게임 시작 전 로그인 확인: 세션이 없다고 나오면 시작 버튼이 열리지 않고 로그인 안내로', async () => {
+    await page.route('**/api/rhythm/me', route => route.fulfill({ json: { loggedIn: false, onlineEnabled: true } }), { times: 1 });
+    await page.goto(`${BASE}/game?song=${SONG}&diff=easy&debug=1`);
+    await page.waitForURL(u => new URL(u).pathname === '/', { timeout: 10000 });
+    // 세션 쿠키가 아예 없으면 서버가 게임 화면 대신 로그인 안내를 보냄
+    const cookies = await context.cookies();
+    await context.clearCookies();
+    await page.goto(`${BASE}/game?song=${SONG}&diff=easy&debug=1`);
+    assert.equal(await page.locator('body').getAttribute('data-page'), 'login');
+    assert.equal(await page.locator('#startBtn').count(), 0);
+    await context.addCookies(cookies);
   });
 
   await check('/demo/ 옛 주소는 홈으로 이동', async () => {
@@ -596,16 +736,14 @@ results.push('\n[배속 / 설정 / 곡 데이터 (1440 desktop)]');
       assert.equal(s.maxCombo, s.total);
       assert.equal(await page.locator('#resAccuracy').textContent(), '100.00%');
       assert.equal(await page.locator('#resGrade').textContent(), 'S+');
-      assert.equal(await page.locator('#resLife').textContent(), '100');
+      assert.equal(await page.locator('#resLife').textContent(), '10 / 10');
       assert.equal(await page.locator('#resultTitle').textContent(), 'CLEAR!');
       assert.equal(await page.locator('#resOnlineStatus').textContent(), '자동 플레이는 온라인 랭킹에 반영되지 않습니다.');
       assert.ok(await page.locator('#resChuru').isHidden(), '자동 플레이는 츄르 없음');
       assert.match(await page.locator('#resMeta').textContent(), /EASY · 1\.5x · CLEAR/);
       assert.match(await page.locator('#resNoSave').textContent(), /자동 플레이/);
-      const recent = await page.evaluate(() => JSON.parse(localStorage.getItem('wony_rhythm_results') || '[]'));
-      assert.ok(recent.every(r => !r.autoplay), '자동 플레이는 최근 기록에도 남기지 않음');
-      const scores = await page.evaluate(() => JSON.parse(localStorage.getItem('wony_rhythm_scores') || '{}'));
-      assert.equal(scores[SONG]?.easy, undefined, '자동 플레이는 최고 기록 갱신 안 함');
+      const keys = await storageKeys(page);
+      assert.ok(keys.every(k => ALLOWED_STORAGE.includes(k)), `localStorage 에는 설정만: ${keys}`);
       await page.locator('#retryBtn').click();
       assert.equal((await snap(page)).phase, 'playing');
     });
@@ -655,7 +793,48 @@ for (const lanes of [6, 8]) {
   }
 }
 
+// ── 비로그인: 모든 화면 대신 로그인 안내, 게임 · 영상은 열리지 않음 ──
+results.push('\n[비로그인 (WONY PHONE 로그인 필요)]');
+for (const vp of [VIEWPORTS[0], VIEWPORTS[1], VIEWPORTS[3]]) {
+  const { context, page, errors } = await newPage(vp, { login: false });
+  const requests = [];
+  page.on('request', r => requests.push(r.url()));
+  for (const path of ['/', '/game?song=demo-beat&diff=easy', '/songs', '/ranking', '/shop', '/scores', '/settings']) {
+    await check(`${vp.name} ${path}: 로그인 안내 (게임 시작 · 곡 플레이 불가)`, async () => {
+      await page.goto(BASE + path);
+      await page.waitForLoadState('networkidle');
+      assert.equal(await page.locator('body').getAttribute('data-page'), 'login');
+      assert.equal(await page.locator('#loginTitle').textContent(), '로그인이 필요한 서비스입니다.');
+      assert.match(await page.locator('.login-card').textContent(), /WONY PHONE에 로그인한 뒤\s*리듬게임을 이용해주세요\./);
+      assert.equal(await page.locator('#phoneLink').textContent(), 'WONY PHONE으로 이동');
+      assert.equal(await page.locator('#phoneLink').getAttribute('href'), PHONE_URL);
+      assert.ok(await page.locator('#phoneLink').isVisible());
+      assert.equal(await page.locator('#startBtn, #playBtn, .menu').count(), 0, '게임 · 메뉴 없음');
+      assert.ok(await noHorizontalScroll(page));
+      assert.deepEqual(await smallTargets(page), []);
+    });
+  }
+  await check(`${vp.name}: 영상 · 기록 · 츄르 요청 없음, localStorage 회원 데이터 없음`, async () => {
+    assert.ok(!requests.some(u => u.endsWith('.mp4') || u.includes('/js/game.js')), requests.filter(u => u.endsWith('.mp4')).join(','));
+    assert.ok(!requests.some(u => /\/api\/rhythm\/(results|records|ranking)/.test(u)));
+    const keys = await storageKeys(page);
+    assert.ok(keys.every(k => ALLOWED_STORAGE.includes(k)), `${keys}`);
+    const status = await page.evaluate(async () => (await fetch('/api/rhythm/results', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status);
+    assert.equal(status, 401, '비로그인 저장 API 거절');
+  });
+  await check(`${vp.name}: 만료/재사용 입장권 → 로그인 안내 + 실패 문구, WONY PHONE 이동 버튼`, async () => {
+    await page.goto(`${BASE}/rhythm-login?ticket=v1.bad.sig&next=/game`);
+    assert.equal(await page.locator('body').getAttribute('data-page'), 'login');
+    assert.match(await page.locator('#loginMessage').textContent(), /만료되었거나 이미 사용/);
+    await page.locator('#phoneLink').click({ noWaitAfter: true, trial: true });
+  });
+  // 위에서 일부러 보낸 비로그인 저장 요청(401)만 예외
+  await check(`${vp.name}: 비로그인 화면 JS console error 없음`, async () => assert.deepEqual(errors.filter(e => !/401/.test(e)), []));
+  await context.close();
+}
+
 await browser.close();
+servers.stop();
 console.log(results.join('\n'));
 console.log(failures ? `\n${failures} failed` : '\nall passed');
 process.exit(failures ? 1 : 0);

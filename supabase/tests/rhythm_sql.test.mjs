@@ -13,7 +13,7 @@ import { toRankingRow } from '../../frontend-demo/js/ranking.js';
 const SQL = name => readFileSync(new URL(`../sql/${name}`, import.meta.url), 'utf-8');
 const STUB = readFileSync(new URL('./supabase_stub.sql', import.meta.url), 'utf-8');
 const POLICY = JSON.parse(readFileSync(new URL('../../shared/record_policy_cases.json', import.meta.url), 'utf-8'));
-const APPLY = ['001_rhythm_tables.sql', '002_rhythm_indexes.sql', '003_rhythm_functions.sql', '004_rhythm_rls.sql', '006_rhythm_play_id_and_churu.sql'];
+const APPLY = ['001_rhythm_tables.sql', '002_rhythm_indexes.sql', '003_rhythm_functions.sql', '004_rhythm_rls.sql', '006_rhythm_play_id_and_churu.sql', '007_rhythm_my_records.sql'];
 const SECRET = 'test-secret-' + 'x'.repeat(40);
 
 async function freshDb({ secret = SECRET } = {}) {
@@ -520,4 +520,31 @@ test('006 rollback: 지갑 · 지급 기록 · 보상 설정까지 제거, 다�
   for (const f of APPLY) await db.exec(SQL(f));
   await db.query("insert into rhythm_private.settings (key, value) values ('server_hmac_secret', $1)", [SECRET]);
   assert.equal((await submit(db, me, makeRow())).churu.amount, 4);
+});
+
+// ── 007: 내 기록 조회 (로그인 필수 정책: 기록은 DB 에서만) ──────────────────────────
+async function myRecords(db, uid, { action = 'records' } = {}) {
+  const { payload, signature } = sign({ action, user_id: uid, ts: now() });
+  return as(db, 'anon', null, async () => (await db.query('select public.rhythm_get_my_records_signed($1, $2) as r', [payload, signature])).rows[0].r);
+}
+
+test('007 내 기록: 본인 최고 기록(정상 CLEAR) + 최근 플레이 20개, 다른 회원 · user_id 노출 없음', async () => {
+  const db = await freshDb();
+  const me = await addMember(db);
+  const other = await addMember(db);
+  await submit(db, me, makeRow({ diff: 'hard', p: 10 }));
+  await submit(db, me, makeRow({ diff: 'hard', status: 'GAME_OVER', p: 3, m: 7, life: 0 }));
+  await submit(db, me, makeRow({ diff: 'easy', noFail: true, p: 10 }));
+  await submit(db, other, makeRow({ diff: 'hard', p: 10, bonus: 500 }));
+  const r = await myRecords(db, me);
+  assert.deepEqual(r.best.map(b => [b.song_id, b.difficulty, b.best_score, b.clear_count]), [['wony-cover-01', 'hard', 10000, 1]], 'GAME OVER · NO FAIL 은 최고 기록 아님');
+  assert.deepEqual(r.recent.map(x => [x.difficulty, x.status, x.no_fail, x.ranked]),
+    [['easy', 'CLEAR', true, false], ['hard', 'GAME_OVER', false, false], ['hard', 'CLEAR', false, true]], '최신 순');
+  const text = JSON.stringify(r);
+  assert.ok(!text.includes(me) && !text.includes(other) && !text.includes('play_id') && !text.includes('"id"'), 'user_id · 내부 id 없음');
+  for (let i = 0; i < 25; i++) await submit(db, me, makeRow({ diff: 'normal', status: 'GAME_OVER', p: 3, m: 7, life: 0 }));
+  assert.equal((await myRecords(db, me)).recent.length, 20);
+  assert.deepEqual(await myRecords(db, await addMember(db)), { best: [], recent: [] });
+  await assert.rejects(myRecords(db, me, { action: 'wallet' }), /action/);
+  await assert.rejects(as(db, 'anon', null, () => db.query("select public.rhythm_get_my_records_signed('{\"action\":\"records\"}', 'x')")), /invalid signature/);
 });

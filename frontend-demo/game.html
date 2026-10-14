@@ -14,9 +14,11 @@
     <header class="hud">
       <button type="button" class="hud-btn" id="pauseBtn" aria-label="일시정지 (Esc)" disabled>Ⅱ</button>
       <div class="hud-song"><strong id="songTitle">WONY RHYTHM</strong><span class="badge" id="diffBadge"></span></div>
-      <div class="hud-life" id="lifeMeter" role="meter" aria-label="LIFE" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+      <!-- LIFE: 하트(반 칸 = 0.5) + 숫자 "현재 / 최대". 최대 LIFE 는 난이도별 (config.MAX_LIFE) -->
+      <div class="hud-life" id="lifeMeter" role="meter" aria-label="LIFE" aria-valuemin="0" aria-valuemax="8" aria-valuenow="8">
         <span class="hud-label">LIFE <span id="noFailTag" class="nofail-tag" hidden>NO FAIL</span></span>
-        <span class="life-row"><span class="life-bar"><i id="lifeBar"></i></span><strong id="lifeNum">100</strong></span>
+        <span class="life-row"><span class="hearts" id="lifeHearts" aria-hidden="true"></span><strong class="life-num"><span id="lifeNum">8</span><small>/<span id="lifeMax">8</span></small></strong></span>
+        <span class="life-heal" id="lifeHeal" aria-hidden="true" hidden>+0.5 LIFE</span>
       </div>
       <div class="hud-score"><span class="hud-label">SCORE</span><strong id="score">0</strong></div>
       <div class="progress" aria-hidden="true"><i id="progress"></i></div>
@@ -66,6 +68,7 @@
         <div class="stat"><dt>최고 점수</dt><dd id="readyBest">0</dd></div>
       </dl>
       <p class="status is-error" id="readyProblem" role="status" hidden></p>
+      <p class="status is-error" id="readyLogin" role="status" hidden>로그인이 필요합니다. WONY PHONE에서 리듬게임을 다시 열어주세요.</p>
       <p class="muted" style="margin:12px 0 0;font-size:.9rem">키보드 <strong id="keyHint">← ↓ ↑ →</strong> 또는 터치 버튼 · Esc 일시정지 · 영상 <strong id="readyVideo">ON</strong> · NO FAIL <strong id="readyNoFail">OFF</strong></p>
       <div class="actions">
         <button type="button" class="btn btn-primary btn-block" id="startBtn" data-autofocus disabled>▶ 게임 시작</button>
@@ -123,6 +126,7 @@
         </div>
         <div id="resRanking"></div>
         <a class="btn btn-soft btn-block" id="resFullRanking" href="/ranking" hidden>전체 랭킹 보기</a>
+        <a class="btn btn-primary btn-block" id="resLogin" href="/?login=expired" hidden>WONY PHONE에서 다시 로그인</a>
       </section>
       <section class="churu-box" id="resChuru" hidden aria-live="polite">
         <p class="churu-title" id="resChuruTitle">🐟 클리어 보상</p>

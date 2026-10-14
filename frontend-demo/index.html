@@ -19,11 +19,10 @@
       <p class="tagline">리듬에 맞춰 눌러보세요 🎵</p>
     </header>
 
-    <!-- WONY PHONE 회원 로그인 상태 (온라인 기록 · 랭킹). 온라인 기능이 꺼져 있으면 숨김 -->
+    <!-- WONY PHONE 회원 로그인 상태 (이 화면은 로그인 회원만 열림) -->
     <section class="card online-card" id="onlineCard" hidden aria-live="polite">
       <p class="online-text" id="onlineText"></p>
       <div class="online-actions">
-        <a class="btn btn-soft" id="loginLink" hidden>WONY PHONE에서 로그인</a>
         <button type="button" class="btn" id="logoutBtn" hidden>로그아웃</button>
       </div>
     </section>
@@ -47,7 +46,7 @@
       </a>
       <a class="menu-item" href="/scores">
         <span class="menu-icon" aria-hidden="true">📈</span>
-        <span>최고 기록<small>이 기기의 곡·난이도별 기록</small></span>
+        <span>최고 기록<small>내 곡·난이도별 기록</small></span>
       </a>
       <a class="menu-item" href="/settings">
         <span class="menu-icon" aria-hidden="true">⚙️</span>

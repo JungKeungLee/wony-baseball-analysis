@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createGame, hitLane, resultRecord, startGame, updateGame } from '../../js/engine.js';
 import {
-  getOnlineStatus, isOnlineSubmittable, isRankingEligible, loadRanking, setFetch, submitRanking, toRankingRow,
+  bestOf, getOnlineStatus, isOnlineSubmittable, isRankingEligible, loadMyRecords, loadRanking, setFetch, submitRanking, toRankingRow,
 } from '../../js/ranking.js';
 
 const POLICY = JSON.parse(readFileSync(new URL('../../../shared/record_policy_cases.json', import.meta.url), 'utf-8'));
@@ -42,7 +42,7 @@ test('toRankingRow: DB 함수(rhythm_submit_play)가 읽는 컬럼과 정확히 
   assert.deepEqual({ ...row, play_id: 'x' }, {
     play_id: 'x', song_id: 'demo-beat', difficulty: 'hard', lane_count: 4, note_speed: 1.75, status: 'CLEAR', no_fail: false,
     score: 2000, grade: 'S+', accuracy: 100, max_combo: 2, perfect_count: 2, great_count: 0, good_count: 0,
-    miss_count: 0, total_notes: 2, final_life: 100, result_version: 3,
+    miss_count: 0, total_notes: 2, final_life: 5, result_version: 3,
   });
 });
 
@@ -118,4 +118,25 @@ test('getOnlineStatus: 로그인 상태, 서버에 닿지 않으면 온라인 �
   }
   fakeServer(() => { throw new Error('offline'); });
   assert.deepEqual(await getOnlineStatus(), { loggedIn: false, onlineEnabled: false, error: true });
+});
+
+test('loadMyRecords: 내 기록은 서버에서만, 실패 · 세션 만료도 예외 없이', async () => {
+  const best = [{ songId: 'demo-beat', difficulty: 'hard', laneCount: 4, bestScore: 30000, bestGrade: 'S+' }];
+  fakeServer(() => ({ body: { ok: true, best, recent: [] } }));
+  assert.deepEqual(await loadMyRecords(), { ok: true, best, recent: [] });
+  assert.equal(calls[0].url, '/api/rhythm/records');
+  assert.equal(calls[0].opts.credentials, 'same-origin');
+  assert.equal(bestOf(best, 'demo-beat', 'hard').bestScore, 30000);
+  assert.equal(bestOf(best, 'demo-beat', 'easy'), null);
+  assert.equal(bestOf(best, 'demo-beat', 'hard', 6), null, '레인 수 구분');
+  fakeServer(() => ({ status: 401, body: { ok: false } }));
+  assert.deepEqual(await loadMyRecords(), { ok: false, best: [], recent: [], reason: 'login-required' });
+  fakeServer(() => { throw new Error('offline'); });
+  assert.equal((await loadMyRecords()).reason, 'failed');
+});
+
+test('세션 만료(401): 같은 판을 다시 보내지 않음 (중복 저장 · 지급 없음)', async () => {
+  fakeServer(() => ({ status: 401, body: { ok: false, error: 'login_required' } }));
+  assert.deepEqual(await submitRanking(clearRecord(), {}, { retryDelayMs: 0 }), { submitted: false, reason: 'login-required' });
+  assert.equal(calls.length, 1);
 });

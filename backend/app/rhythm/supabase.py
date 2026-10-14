@@ -3,6 +3,7 @@
   public.rhythm_submit_play(p_payload, p_signature)
   public.rhythm_get_ranking_signed(p_payload, p_signature)
   public.rhythm_get_wallet_signed(p_payload, p_signature)      (006: 츄르 잔액)
+  public.rhythm_get_my_records_signed(p_payload, p_signature)  (007: 내 최고 기록 · 최근 플레이)
 
 payload = 이 서버가 만든 JSON 문자열, signature = hex(HMAC-SHA256(RHYTHM_DB_SECRET, payload)).
 DB 는 같은 비밀값으로 서명 · 5분 이내 시각 · 1회용 nonce(저장)를 확인합니다 (supabase/sql/003).
@@ -80,6 +81,13 @@ class RhythmDb:
             'song_id': song_id, 'difficulty': difficulty, 'lane_count': lane_count, 'limit': limit, 'around': around,
         })
         return rows if isinstance(rows, list) else []
+
+    def my_records(self, user_id):
+        """{'best': [...], 'recent': [...]} (본인 것만, DB 가 user_id 로 거름)"""
+        out = self._rpc('rhythm_get_my_records_signed', {'action': 'records', 'user_id': user_id, 'ts': int(time.time())})
+        if not isinstance(out, dict):
+            raise DbError('unavailable')
+        return {k: [r for r in out.get(k) or [] if isinstance(r, dict)] for k in ('best', 'recent')}
 
     def wallet(self, user_id):
         """츄르 잔액 (지갑이 없으면 0)"""

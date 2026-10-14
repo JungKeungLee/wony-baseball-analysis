@@ -45,16 +45,22 @@ frontend-demo/songs/songs.json                     곡 등록 (가장 마지막�
 채보의 `"laneCount"`(4 / 6 / 8, 없으면 4)가 레인 수이고 lane 은 `0 <= lane < laneCount` 입니다. 게임 UI 는 아직 4키만 쓰지만 키 설정·터치 버튼·레이아웃·생성기(`generate_chart(..., lane_count=)`)는 레인 수를 받습니다.
 난이도별 최소 간격/밀도/동시치기 비율은 `tools/chart_config.py` 한 곳에서 조정합니다.
 
-## 온라인 기록 · 랭킹 (WONY PHONE 회원)
+## 로그인 필수 · 온라인 기록 · 랭킹 · 츄르 (WONY PHONE 회원)
 
-WONY PHONE 과 같은 Supabase 를 씁니다 (DB 객체 · 적용 순서: [supabase/README.md](supabase/README.md)).
+WONY RHYTHM 은 **로그인한 WONY PHONE 회원만** 플레이할 수 있습니다. WONY PHONE 과 같은 Supabase 를 씁니다
+(DB 객체 · 적용 순서: [supabase/README.md](supabase/README.md)).
 
-- WONY PHONE 의 "리듬게임" 앱 → 60초 1회용 입장권 → `/rhythm-login` → 이 서버의 HttpOnly 세션 (Supabase 토큰은 넘기지 않음)
-- 게임 종료 시 1번 `POST /api/rhythm/results` → 서버가 세션의 user_id 로 Supabase 서명 함수 호출 (플레이 중 요청 없음)
-- 정상 CLEAR 만 최고 기록 · 랭킹, GAME OVER / NO FAIL 은 플레이 기록만, AUTO / PREVIEW 는 보내지 않음 (로컬 기록 정책과 같음)
-- 로그인하지 않았거나 Supabase 가 실패해도 게임 · 로컬 기록은 그대로 (결과 화면에 안내만)
+- 이용 흐름: WONY PHONE 로그인 → "리듬게임" 앱 → 60초 1회용 입장권 → `/rhythm-login` → 이 서버의 HttpOnly 세션 (Supabase 토큰은 넘기지 않음)
+- 세션이 없으면 모든 화면(`/`, `/game`, `/songs`, `/ranking`, `/shop`, `/scores`, `/settings`) 대신 **로그인 안내**
+  ("로그인이 필요한 서비스입니다." + [WONY PHONE으로 이동] = `WONY_PHONE_URL`). 세션이 있으면 WONY PHONE 을 다시 거치지 않음, 로그아웃하면 다시 필요
+- 게임 종료 시 1번 `POST /api/rhythm/results` → 서버가 세션의 user_id 로 Supabase 서명 함수 호출 (플레이 중 요청 없음, 게임 1판 = play_id 1개)
+- 정상 CLEAR 만 최고 기록 · 랭킹 · 츄르, GAME OVER / NO FAIL 은 플레이 기록만, AUTO / PREVIEW 는 보내지 않음
+- 게임 도중 세션이 만료돼도 판은 끝까지. 결과 저장 때 "로그인 세션이 만료되었습니다." + WONY PHONE 로그인 버튼 (저장 · 지급 없음, 재전송 없음)
+- 이 기기(localStorage)에는 **게임 설정만**: 키 · 노트 배속 · 영상 ON/OFF · NO FAIL · 판정 보정 · 터치 버튼, 마지막 곡/난이도, 장착 스킨 선택.
+  최고 기록 · 최근 플레이 · 랭킹 · 츄르 · 보유 스킨은 서버(회원)만. 이전 버전의 로컬 기록 · 비로그인 츄르는 자동으로 지움
+- 곡 추가 도구의 미리보기(`tools/admin_server.py`, 127.0.0.1)는 로그인 없이 쓰며 아무것도 저장하지 않음
 
-Render 환경변수 (모두 서버 전용, 하나라도 없으면 온라인 기능만 꺼짐):
+Render 환경변수 (모두 서버 전용, `RHYTHM_LINK_SECRET` 이 없으면 아무도 로그인할 수 없어 게임을 열 수 없음):
 
 | 이름 | 값 |
 |---|---|
@@ -62,7 +68,7 @@ Render 환경변수 (모두 서버 전용, 하나라도 없으면 온라인 기�
 | `RHYTHM_DB_SECRET` | Supabase `005` SQL 로 넣은 값과 같은 값, 32자 이상 |
 | `SUPABASE_URL` | WONY PHONE 과 같은 Supabase 주소 |
 | `SUPABASE_PUBLISHABLE_KEY` | WONY PHONE 과 같은 공개 키 (`sb_publishable_…`). service role key 금지 |
-| `WONY_PHONE_URL` | (선택) 홈의 "WONY PHONE에서 로그인" 링크 |
+| `WONY_PHONE_URL` | 로그인 안내 화면의 [WONY PHONE으로 이동] 주소 (없으면 버튼 대신 안내 문구) |
 
 로컬: 저장소 루트에 `.env` (예시 `.env.example`, git 에 올라가지 않음). 연결 확인: `cd backend && python -m app.rhythm.check`
 
@@ -70,14 +76,17 @@ Render 환경변수 (모두 서버 전용, 하나라도 없으면 온라인 기�
 
 | 경로 | 화면 |
 |---|---|
-| `/` | 홈 |
+| `/` | 홈 (🐟 츄르, 게임 시작 · 곡 선택 · 랭킹 · 스킨 상점 · 최고 기록 · 설정) |
 | `/songs` | 곡 → 난이도 → 배속 → 영상 ON/OFF → 시작 |
 | `/game?song=wony-cover-01&diff=hard` | 플레이 |
-| `/settings` | 키, 노트 배속, 영상 보기, 판정 보정, 터치 버튼 |
-| `/scores` | 최고 점수(곡+난이도별), 최근 플레이(배속 포함) |
+| `/ranking?song=…&diff=…` | 전체 랭킹 (곡 + 난이도) |
+| `/shop` | 스킨 상점 (준비 중) |
+| `/settings` | 키, 노트 배속, 영상 보기, 판정 보정, 터치 버튼, 스킨 |
+| `/scores` | 내 최고 기록(곡+난이도별) · 최근 플레이 (서버 기록) |
+(위 화면은 모두 로그인 필요. 세션이 없으면 같은 주소에서 로그인 안내)
 | `/health` | `{"status": "ok"}` |
 | `/rhythm-login?ticket=…` | WONY PHONE 입장권 → 회원 세션 |
-| `/api/rhythm/me` · `results` · `ranking` · `logout` | 온라인 기록 API |
+| `/api/rhythm/me` · `results` · `records` · `ranking` · `logout` | 온라인 기록 API (me 외에는 로그인 필요) |
 | `/demo/...` | 이전 주소 → `/`로 301 이동 |
 
 ## 실행 (게임 서버)
@@ -118,7 +127,8 @@ frontend-demo/
   js/engine.js    게임 상태: hitLane() / updateGame() / pause / resume (DOM 없음)
   js/layout.js    화면 크기 → 좌표, 배속 → 노트 접근 시간 (2000ms / 배속)
   js/config.js    판정 창·점수·정확도·배속 (모든 난이도 공통)
-  js/storage.js   loadSettings / saveSettings / loadBestScore / saveBestScore / saveResult
+  js/storage.js   이 기기 저장: 게임 설정만 (loadSettings / saveSettings / purgeMemberData)
+  js/session.js   로그인 필수 확인 (requireMember), 세션 만료 안내
   js/input.js     키보드 + pointer(멀티터치) → 같은 hitLane
 ```
 
@@ -132,7 +142,7 @@ cd frontend-demo && npm test                       # 게임 로직 (Node 18+)
 cd supabase/tests && npm install && npm test       # Supabase SQL (PGlite, 운영 DB 접속 없음)
 CHROMIUM_PATH="…/msedge.exe" node frontend-demo/tests/online-e2e.mjs   # 로그인 → 플레이 → 저장 → 랭킹 전체 흐름
 # 브라우저: 서버 실행 후. MP4(H.264) 재생을 위해 Chrome/Edge 실행 파일 지정
-WONY_BASE_URL=http://127.0.0.1:8000 CHROMIUM_PATH="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm run test:browser
+CHROMIUM_PATH="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" npm run test:browser   # 서버 · 가짜 Supabase 를 직접 띄움 (supabase/tests 에서 npm install 필요)
 ```
 
 `python tools/make_demo_song.py`는 저작권 없는 합성 테스트곡(`demo-beat`)을 같은 자동 생성 경로로 등록합니다.

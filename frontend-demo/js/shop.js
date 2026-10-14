@@ -1,5 +1,5 @@
-// 스킨 상점 (준비 중): 보유 츄르 + 안내만. 상품 목록 · 구매 버튼은 SHOP_OPEN 이 true 가 되기 전까지 만들지 않는다.
-import { getOnlineStatus } from './ranking.js';
+// 스킨 상점 (준비 중, 로그인 회원 전용): 보유 츄르 + 안내만. 상품 목록 · 구매 버튼은 SHOP_OPEN 이 true 가 되기 전까지 만들지 않는다.
+import { requireMember } from './session.js';
 import { applyUiSkin } from './theme.js';
 import { renderWalletBadge, walletView } from './wallet.js';
 
@@ -14,4 +14,5 @@ back.addEventListener('click', e => {
   }
 });
 
-getOnlineStatus().then(online => renderWalletBadge(document.getElementById('walletBadge'), walletView(online)));
+// 로그인 필수 (보유 츄르 = 회원 데이터)
+requireMember().then(online => renderWalletBadge(document.getElementById('walletBadge'), walletView(online)));

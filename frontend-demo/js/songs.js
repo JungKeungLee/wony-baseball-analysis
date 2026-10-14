@@ -2,8 +2,9 @@
 // 이 화면은 cover 이미지만 불러온다 (MP4 는 게임 화면에서 고른 곡 하나만 preload="metadata").
 import { DIFFICULTIES, DIFFICULTY_LABELS, NOTE_SPEEDS } from './config.js';
 import { loadCatalog, pickDifficulty } from './catalog.js';
-import { loadBestRecord, loadLastSelection, loadSettings, saveLastSelection, updateSettings } from './storage.js';
-import { getOnlineStatus, loadRanking } from './ranking.js';
+import { loadLastSelection, loadSettings, saveLastSelection, updateSettings } from './storage.js';
+import { bestOf, loadMyRecords, loadRanking } from './ranking.js';
+import { requireMember } from './session.js';
 import { rankingProblemText, renderRankingList } from './ranking-view.js';
 
 const $ = id => document.getElementById(id);
@@ -13,6 +14,10 @@ const last = loadLastSelection();
 let catalog = [];
 let selected = null;
 let difficulty = null;
+let myBest = [];   // 서버의 내 최고 기록 (로그인 회원)
+const NO_BEST = Object.freeze({ bestScore: 0, bestGrade: null });
+const loadBestRecord = (songId, d) => bestOf(myBest, songId, d) || NO_BEST;
+const online = requireMember();   // 로그인 필수 (세션이 만료됐으면 로그인 안내로)
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -74,9 +79,16 @@ async function refreshRanking() {
     : Object.assign(document.createElement('p'), { className: 'muted', textContent: rankingProblemText(board.reason) }));
 }
 $('rankingPanel').addEventListener('toggle', refreshRanking);
-getOnlineStatus().then(online => {
-  $('rankingPanel').hidden = !online.onlineEnabled;
+online.then(status => {
+  $('rankingPanel').hidden = !status.onlineEnabled;
   refreshRanking();
+  if (!status.loggedIn || !status.onlineEnabled) return;
+  loadMyRecords().then(r => {
+    if (!r.ok) return;
+    myBest = r.best;
+    $('songList').replaceChildren(...catalog.map(songCard));   // 난이도별 최고 기록 표시
+    if (selected) select(selected, false);
+  });
 });
 
 function updatePlay() {

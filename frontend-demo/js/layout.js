@@ -8,7 +8,18 @@ const LANE_MAX_W_PORTRAIT = 130;
 const LANE_MAX_W_LANDSCAPE = 190;
 const LANE_MIN_W_LANDSCAPE = 105;
 
-export function computeLayout(width, height, dpr = 1, laneCount = DEFAULT_LANE_COUNT) {
+/**
+ * 판정선과 게임 화면 아래 끝 사이 거리(px). 화면(뷰포트) 높이로만 정한다 →
+ * 영상 ON/OFF 로 게임 영역 높이가 바뀌어도 판정선 · 입력 버튼은 화면 아래 기준 같은 위치.
+ */
+export function judgeOffsetFor(viewportHeight) {
+  return Math.round(clamp((Number(viewportHeight) || 0) * 0.09, 40, 96));
+}
+
+/**
+ * @param {{judgeOffset?: number}} [opts]  judgeOffset 이 있으면 판정선 = 아래에서 그만큼 (없으면 기존: 높이의 14%, 32~110px)
+ */
+export function computeLayout(width, height, dpr = 1, laneCount = DEFAULT_LANE_COUNT, { judgeOffset } = {}) {
   const w = Math.max(1, Math.floor(width));
   const h = Math.max(1, Math.floor(height));
   const landscape = w > h;
@@ -18,7 +29,8 @@ export function computeLayout(width, height, dpr = 1, laneCount = DEFAULT_LANE_C
     : Math.max(1, Math.min(w - 16, LANE_MAX_W_PORTRAIT * laneCount));
   const fieldX = Math.round((w - fieldW) / 2);
   const laneW = fieldW / laneCount;
-  const judgeY = Math.round(h - clamp(h * 0.14, 32, 110));
+  const offset = Number.isFinite(judgeOffset) ? Math.min(judgeOffset, h * 0.4) : clamp(h * 0.14, 32, 110);
+  const judgeY = Math.round(h - offset);
   return {
     width: w,
     height: h,

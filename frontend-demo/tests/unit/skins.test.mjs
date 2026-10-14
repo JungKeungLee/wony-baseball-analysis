@@ -44,17 +44,20 @@ test('장착: UI 스킨과 리듬 바 스킨은 서로 독립, 잘못된 요청�
     { id: 'blue-ui', type: 'ui', name: '파랑', price: 10, isDefault: false, enabled: true, theme: { '--accent': '#00f' } },
     { id: 'neon-bar', type: 'rhythm-bar', name: '네온', price: 10, isDefault: false, enabled: true, theme: { bgTop: '#000' } },
     { id: 'old-bar', type: 'rhythm-bar', name: '판매 종료', price: 10, isDefault: false, enabled: false, theme: {} }];
+  // 보유 목록은 서버 저장소가 줌 (여기서는 같은 모양의 가짜 저장소)
   const storage = new MemoryStorage();
-  storage.setItem(SKIN_STORAGE_KEY, JSON.stringify({ owned: ['blue-ui', 'neon-bar', 'old-bar'] }));
-  const repo = createLocalSkinRepository(storage);
+  const local = createLocalSkinRepository(storage);
+  let owned = ['blue-ui', 'neon-bar', 'old-bar'];
+  const repo = { ...local, loadOwned: () => owned };
   assert.deepEqual(equipSkin('ui', 'blue-ui', repo, extra), { ok: true, equipped: { uiSkinId: 'blue-ui', rhythmBarSkinId: 'default-rhythm' } });
   assert.deepEqual(equipSkin('rhythm-bar', 'neon-bar', repo, extra).equipped, { uiSkinId: 'blue-ui', rhythmBarSkinId: 'neon-bar' });
   assert.deepEqual(equipSkin('ui', 'default-ui', repo, extra).equipped, { uiSkinId: 'default-ui', rhythmBarSkinId: 'neon-bar' }, '기본 스킨은 언제나 선택 가능');
   assert.equal(equipSkin('ui', 'neon-bar', repo, extra).error, 'WRONG_TYPE');
   assert.equal(equipSkin('ui', 'nope', repo, extra).error, 'UNKNOWN_SKIN');
   assert.equal(equipSkin('rhythm-bar', 'old-bar', repo, extra).error, 'SKIN_DISABLED');
-  storage.setItem(SKIN_STORAGE_KEY, JSON.stringify({ uiSkinId: 'default-ui', rhythmBarSkinId: 'default-rhythm' }));
+  owned = [];
   assert.equal(equipSkin('ui', 'blue-ui', repo, extra).error, 'NOT_OWNED');
+  assert.deepEqual(Object.keys(JSON.parse(storage.getItem(SKIN_STORAGE_KEY))).sort(), ['rhythmBarSkinId', 'uiSkinId'], '로컬에는 장착 선택만');
   // 현재 카탈로그: 기본 스킨 장착
   assert.equal(equipSkin('rhythm-bar', 'default-rhythm', repo).ok, true);
 });
@@ -83,11 +86,11 @@ test('구매 인터페이스 (향후): skinId 만 서버로, 오류 코드 구�
   assert.equal((await purchaseSkin('nope', { shopOpen: true, api: api({ ok: true }) })).error, 'UNKNOWN_SKIN');
 });
 
-test('기본 리듬 바 = 이전 플레이 화면 색 그대로', () => {
+test('기본 리듬 바: 배경 · 레인 색은 이전 그대로 + 판정선 glow', () => {
   assert.deepEqual({ ...DEFAULT_RHYTHM_THEME, palette: [...DEFAULT_RHYTHM_THEME.palette] }, {
     bgTop: '#101A33', bgBottom: '#17284D', laneEven: 'rgba(255,255,255,0.06)', laneOdd: 'rgba(255,255,255,0.035)',
     laneLine: 'rgba(255,255,255,0.12)', judgeLine: 'rgba(255,255,255,0.9)', keyLabel: 'rgba(255,255,255,0.55)',
-    pressGlow: 'rgba(255,255,255,0.18)', palette: [...LANE_PALETTE],
+    pressGlow: 'rgba(255,255,255,0.55)', judgeGlow: 'rgba(255,209,102,0.45)', palette: [...LANE_PALETTE],
   });
   const theme = rhythmBarTheme(createLocalSkinRepository(new MemoryStorage()));
   assert.equal(theme.id, 'default-rhythm');

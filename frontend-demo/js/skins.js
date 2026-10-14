@@ -8,12 +8,13 @@
 //
 // [현재] 기본 스킨 2개만 있음: 항상 보유 · 기본 장착 · 언제나 선택 가능. 상점은 "준비 중"(SHOP_OPEN=false).
 // [향후] 보유 · 장착 · 구매의 기준은 서버(Supabase rhythm_user_skins · rhythm_user_settings · 구매 함수)다.
-//        이 파일의 로컬 저장소는 화면 표시용 보조값일 뿐이며 보유 여부의 근거가 아니다.
+//        이 기기(localStorage)에는 "어떤 스킨을 장착해 쓸지" 화면 설정만 남기고 보유 목록은 저장하지 않는다
+//        (보유 스킨은 로그인 회원 기준 온라인 자산).
 import { DEFAULT_RHYTHM_BAR_SKIN_ID, DEFAULT_UI_SKIN_ID, LANE_PALETTE, SHOP_OPEN } from './config.js';
 
 export const SKIN_TYPES = Object.freeze({ UI: 'ui', RHYTHM_BAR: 'rhythm-bar' });
 
-// 기본 리듬 바 = 지금까지의 플레이 화면 색 그대로 (render.js 기본값)
+// 기본 리듬 바 (render.js 기본값). 레인 색 = config.LANE_PALETTE (터치 버튼과 같은 색)
 export const DEFAULT_RHYTHM_THEME = Object.freeze({
   bgTop: '#101A33',
   bgBottom: '#17284D',
@@ -22,7 +23,8 @@ export const DEFAULT_RHYTHM_THEME = Object.freeze({
   laneLine: 'rgba(255,255,255,0.12)',
   judgeLine: 'rgba(255,255,255,0.9)',
   keyLabel: 'rgba(255,255,255,0.55)',
-  pressGlow: 'rgba(255,255,255,0.18)',
+  pressGlow: 'rgba(255,255,255,0.55)',
+  judgeGlow: 'rgba(255,209,102,0.45)',
   palette: LANE_PALETTE,
 });
 
@@ -78,13 +80,13 @@ export function createLocalSkinRepository(storage = globalThis.localStorage) {
     }
   };
   return {
-    /** 보유 스킨 id (로컬 표시용: 서버 연결 전에는 비어 있고, 기본 스킨은 ownedSkinIds 가 항상 더함) */
-    loadOwned: () => (Array.isArray(read().owned) ? read().owned.filter(id => typeof id === 'string') : []),
+    /** 보유 스킨은 로컬에 두지 않음 (서버 저장소가 생기면 그쪽 목록). 기본 스킨은 ownedSkinIds 가 항상 더함 */
+    loadOwned: () => [],
     loadEquipped: () => {
       const { uiSkinId, rhythmBarSkinId } = read();
       return { uiSkinId, rhythmBarSkinId };
     },
-    saveEquipped: equipped => write({ ...read(), uiSkinId: equipped.uiSkinId, rhythmBarSkinId: equipped.rhythmBarSkinId }),
+    saveEquipped: equipped => write({ uiSkinId: equipped.uiSkinId, rhythmBarSkinId: equipped.rhythmBarSkinId }),
   };
 }
 

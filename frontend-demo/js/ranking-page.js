@@ -1,8 +1,9 @@
 // 전체 랭킹 화면: 곡 + 난이도 (배속 구분 없음). 상위 50 + 내 앞뒤 순위. 로그인 회원만 조회 가능.
 import { DIFFICULTIES, DIFFICULTY_LABELS } from './config.js';
 import { findSong, loadCatalog, pickDifficulty } from './catalog.js';
-import { getOnlineStatus, loadRanking } from './ranking.js';
+import { loadRanking } from './ranking.js';
 import { rankingProblemText, renderRankingList } from './ranking-view.js';
+import { requireMember } from './session.js';
 import { loadLastSelection } from './storage.js';
 import { applyUiSkin } from './theme.js';
 import { renderWalletBadge, walletView } from './wallet.js';
@@ -12,7 +13,7 @@ const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 let catalog = [];
 let seq = 0;
-const online = getOnlineStatus();
+const online = requireMember();   // 로그인 필수
 
 const option = (value, text) => Object.assign(document.createElement('option'), { value, textContent: text });
 

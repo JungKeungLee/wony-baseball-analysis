@@ -1,15 +1,37 @@
 import json
+import time
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app, SITE
+from app.rhythm.auth import COOKIE, make_session
 
 DIFFICULTIES = ['easy', 'normal', 'hard', 'hell']
+
+
+LINK = 'site-link-' + 'a' * 40
+USER = str(uuid.uuid4())
 
 
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.delenv('WONY_AUTH_SECRET', raising=False)
     return TestClient(app, follow_redirects=False)
+
+
+@pytest.fixture
+def login_env(client, monkeypatch):
+    monkeypatch.setenv('RHYTHM_LINK_SECRET', LINK)
+    monkeypatch.setenv('WONY_PHONE_URL', 'https://phone.example/phone')
+    return client
+
+
+@pytest.fixture
+def member(login_env):
+    """WONY PHONE 입장권으로 받은 것과 같은 세션 쿠키를 가진 회원"""
+    login_env.cookies.set(COOKIE, make_session({'sub': USER, 'name': '워니팬'}, LINK, 3600))
+    return login_env
 
 
 def catalog():
@@ -26,9 +48,39 @@ def test_health(client):
     ('/songs', 'data-page="songs"'), ('/settings', 'data-page="settings"'), ('/scores', 'data-page="scores"'),
     ('/ranking', 'data-page="ranking"'), ('/shop', 'data-page="shop"'),
 ])
-def test_pages(client, path, marker):
-    response = client.get(path)
+def test_pages(member, path, marker):
+    response = member.get(path)
     assert response.status_code == 200 and marker in response.text and 'WONY RHYTHM' in response.text
+    assert response.headers['cache-control'] == 'no-store'
+
+
+@pytest.mark.parametrize('path', ['/', '/game', '/game/', '/game?song=demo-beat&diff=easy', '/songs', '/settings', '/scores',
+                                  '/ranking', '/shop'])
+def test_pages_require_rhythm_session(login_env, path):
+    """로그인 필수: 세션이 없으면 게임 화면 대신 로그인 안내 (WONY PHONE 이동 버튼)"""
+    response = login_env.get(path)
+    assert response.status_code == 200
+    assert 'data-page="login"' in response.text and '로그인이 필요한 서비스입니다.' in response.text
+    assert 'href="https://phone.example/phone"' in response.text
+    assert 'id="field"' not in response.text and '/js/game.js' not in response.text, '게임 화면 HTML 은 보내지 않음'
+    assert response.headers['cache-control'] == 'no-store'
+
+
+def test_forged_or_expired_session_gets_login_page(login_env):
+    login_env.cookies.set(COOKIE, make_session({'sub': USER, 'name': 'x'}, 'other-secret-' + 'z' * 40, 3600))
+    assert 'data-page="login"' in login_env.get('/game').text
+    login_env.cookies.set(COOKIE, make_session({'sub': USER, 'name': 'x'}, LINK, 3600, now=time.time() - 7200))
+    assert 'data-page="login"' in login_env.get('/game').text
+
+
+def test_login_page_without_phone_url_or_login_config(client, monkeypatch):
+    """로그인 설정이 없으면 아무도 게임을 열 수 없음 (우회 없음), WONY PHONE 주소가 없으면 버튼 대신 안내"""
+    for k in ('RHYTHM_LINK_SECRET', 'WONY_PHONE_URL'):
+        monkeypatch.delenv(k, raising=False)
+    response = client.get('/game')
+    assert 'data-page="login"' in response.text and 'href=""' in response.text
+    monkeypatch.setenv('WONY_PHONE_URL', 'javascript:alert(1)')
+    assert 'javascript:' not in client.get('/').text
 
 
 @pytest.mark.parametrize('path', ['/css/app.css', '/js/game.js', '/js/clock.js', '/songs/songs.json'])

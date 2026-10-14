@@ -2,7 +2,7 @@ import { DIFFICULTY_LABELS } from './config.js';
 import { loadCatalog, findSong, pickDifficulty } from './catalog.js';
 import { keyLabel } from './keys.js';
 import { loadLastSelection, loadSettings } from './storage.js';
-import { getOnlineStatus } from './ranking.js';
+import { requireMember } from './session.js';
 import { applyUiSkin } from './theme.js';
 import { renderWalletBadge, walletView } from './wallet.js';
 
@@ -32,22 +32,18 @@ const LOGIN_MESSAGES = {
 const loginResult = new URLSearchParams(location.search).get('login');
 if (loginResult) history.replaceState(null, '', location.pathname); // 주소창 정리
 
-getOnlineStatus().then(online => {
+requireMember().then(online => {   // 로그인 필수 (세션이 만료됐으면 로그인 안내로)
   renderWalletBadge(document.getElementById('walletBadge'), walletView(online));
   const card = document.getElementById('onlineCard');
   const text = document.getElementById('onlineText');
-  if (!online.onlineEnabled && !LOGIN_MESSAGES[loginResult]) return;
+  if (!online.loggedIn) return;   // requireMember 가 로그인 안내로 보냄
   card.hidden = false;
-  if (online.loggedIn) {
-    text.textContent = `${online.nickname || 'WONY PHONE 회원'}님, 플레이 기록이 온라인 랭킹에 저장돼요.`;
-    const out = document.getElementById('logoutBtn');
-    out.hidden = false;
-    out.addEventListener('click', async () => {
-      await fetch('/api/rhythm/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
-      location.reload();
-    });
-    return;
-  }
-  text.textContent = LOGIN_MESSAGES[loginResult] || 'WONY PHONE에서 열면 온라인 랭킹에 기록돼요. 로그인 없이도 플레이와 로컬 기록은 그대로 돼요.';
-  if (online.loginUrl) Object.assign(document.getElementById('loginLink'), { href: online.loginUrl, hidden: false });
+  text.textContent = LOGIN_MESSAGES[loginResult]
+    || `${online.nickname || 'WONY PHONE 회원'}님, 플레이 기록이 온라인 랭킹에 저장돼요.`;
+  const out = document.getElementById('logoutBtn');
+  out.hidden = false;
+  out.addEventListener('click', async () => {
+    await fetch('/api/rhythm/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+    location.reload();   // 세션이 없어졌으므로 서버가 로그인 안내를 보냄 (다시 WONY PHONE 로그인 필요)
+  });
 });

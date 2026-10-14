@@ -133,7 +133,7 @@ test('모든 노트 판정 + 마지막 노트 이후 대기 시간이 지나면 
   assert.equal(s.status, 'playing');
   updateGame(s, s.endTime);
   assert.equal(s.status, 'ended');
-  assert.deepEqual(resultOf(s), { score: 1000, maxCombo: 1, counts: { PERFECT: 1, GREAT: 0, GOOD: 0, MISS: 0 }, total: 1, accuracy: 100, life: 100, gameOver: false, grade: 'S+' });
+  assert.deepEqual(resultOf(s), { score: 1000, maxCombo: 1, counts: { PERFECT: 1, GREAT: 0, GOOD: 0, MISS: 0 }, total: 1, accuracy: 100, life: 8, lifeMax: 8, gameOver: false, grade: 'S+' });
 });
 
 test('잘못된 노트(레인 범위 밖 등)는 무시하고 시간순 정렬', () => {

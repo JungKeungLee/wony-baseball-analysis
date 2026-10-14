@@ -1,6 +1,6 @@
 // 게임 상태와 판정 진행. DOM/오디오/화면 크기와 무관하다 (화면이 돌거나 크기가 바뀌어도 이 상태는 그대로).
 // 모든 시각은 같은 "곡 시간"(ms, 곡 시작 = 0) 기준이며 clock.js 가 그 값을 만든다.
-import { END_PADDING_MS, JUDGE_WINDOWS, LIFE, RESULT_STATUS, normalizeLaneCount } from './config.js';
+import { END_PADDING_MS, JUDGE_WINDOWS, LIFE, RESULT_STATUS, maxLifeFor, normalizeLaneCount } from './config.js';
 import { accuracy, gradeFor, lifeDelta, pointsFor, rankGrade } from './judge.js';
 
 /**
@@ -8,7 +8,7 @@ import { accuracy, gradeFor, lifeDelta, pointsFor, rankGrade } from './judge.js'
  * time 은 영상(MP4) 시작 기준 ms. endMs 는 결과 화면으로 넘어가는 시각 (없으면 마지막 노트 + 여유).
  * type 은 지금 'tap' 만 지원. 롱노트는 type:'hold' + duration 으로 확장할 자리만 마련해 둠.
  * @param {{difficulty?: string, noFail?: boolean, windows?: object, laneCount?: number}} options
- *   difficulty: LIFE 감소 배수 결정 (config.LIFE.difficultyMultiplier)
+ *   difficulty: 최대 LIFE (config.MAX_LIFE) · LIFE 감소 배수 (config.LIFE.difficultyMultiplier)
  *   noFail: LIFE 가 0 이 되어도 끝까지 플레이
  *   laneCount: 레인 수 (4/6/8). 없으면 chart.laneCount, 그것도 없으면 4. 0 <= lane < laneCount 인 노트만 쓴다.
  */
@@ -51,8 +51,11 @@ export function createGame(chart, { difficulty = 'normal', noFail = false, windo
     counts: { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 },
     difficulty,
     noFail: Boolean(noFail),
-    life: LIFE.start,
-    lifeMax: LIFE.max,
+    life: maxLifeFor(difficulty),
+    lifeMax: maxLifeFor(difficulty),
+    healCombo: 0,       // 마지막으로 LIFE 를 회복한 콤보 (같은 10콤보 구간 중복 회복 방지, MISS 면 0)
+    healed: 0,          // 이번 판 콤보 회복 합계
+    lastHeal: null,     // 마지막 회복 { amount, combo, time, seq } (화면 효과용)
     lifeZeroAt: null,   // LIFE 가 처음 0 이 된 시각 (NO FAIL 이어도 기록)
     gameOver: false,    // NO FAIL 이 아니면 LIFE 0 → GAME OVER
     status: 'ready', // ready | playing | paused | ended | failed
@@ -88,6 +91,7 @@ function judge(state, note, grade, delta, time) {
   state.combo = grade === 'MISS' ? 0 : state.combo + 1;
   state.maxCombo = Math.max(state.maxCombo, state.combo);
   state.score += pointsFor(grade, state.combo);
+  if (grade === 'MISS') state.healCombo = 0;
   const change = lifeDelta(grade, state.difficulty);
   if (change) {
     state.life = Math.min(state.lifeMax, Math.max(0, state.life + change));
@@ -99,9 +103,22 @@ function judge(state, note, grade, delta, time) {
       }
     }
   }
+  if (!state.gameOver) comboHeal(state, time);
   state.judgementSeq++;
   state.lastJudgement = { grade, lane: note.lane, delta, time, combo: state.combo, seq: state.judgementSeq };
   return state.lastJudgement;
+}
+
+/** 콤보 회복: every 콤보마다 amount (최대 LIFE 까지). 같은 콤보 구간에서는 1번만 */
+function comboHeal(state, time, heal = LIFE.comboHeal) {
+  const { combo } = state;
+  if (!heal || combo <= 0 || combo % heal.every !== 0 || combo === state.healCombo) return;
+  state.healCombo = combo;
+  const amount = Math.min(heal.amount, state.lifeMax - state.life);
+  if (amount <= 0) return;   // 이미 가득 참
+  state.life += amount;
+  state.healed += amount;
+  state.lastHeal = { amount, combo, time, seq: (state.lastHeal?.seq ?? 0) + 1 };
 }
 
 /**
@@ -169,6 +186,7 @@ export function resultOf(state) {
     total: state.total,
     accuracy: acc,
     life: Math.round(state.life * 10) / 10,
+    lifeMax: state.lifeMax,
     gameOver: state.gameOver,
     grade: rankGrade(acc, { gameOver: state.gameOver }),
   };
@@ -244,6 +262,7 @@ export function resultRecord(state, { songId, difficulty, noteSpeed }) {
     totalNotes: r.total,
     accuracy: r.accuracy,
     life: r.life,
+    lifeMax: r.lifeMax,   // 표시용 (온라인 행에는 보내지 않음)
     grade: r.grade,
     // 이전 버전 호환용 파생 값 (판단은 status 로)
     cleared: status === RESULT_STATUS.CLEAR,

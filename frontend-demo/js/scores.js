@@ -1,11 +1,15 @@
 import { DIFFICULTIES, DIFFICULTY_LABELS, RESULT_STATUS, RESULT_STATUS_LABELS } from './config.js';
 import { loadCatalog } from './catalog.js';
-import { clearBestScores, loadAllBestRecords, loadResults } from './storage.js';
+import { bestOf, loadMyRecords } from './ranking.js';
+import { requireMember } from './session.js';
+
+// 내 기록 (로그인 회원, 서버에서만): 곡 · 난이도별 최고 기록 + 최근 플레이
 
 const list = document.getElementById('scoreList');
 const recent = document.getElementById('recentList');
 const status = document.getElementById('status');
 let catalog = [];
+let records = { best: [], recent: [] };
 
 function badge(diff) {
   const b = document.createElement('span');
@@ -16,7 +20,6 @@ function badge(diff) {
 }
 
 function render() {
-  const scores = loadAllBestRecords();
   const fmt = n => (n == null ? '—' : Number(n).toLocaleString('ko-KR'));
   list.replaceChildren(...catalog.map(song => {
     const card = document.createElement('section');
@@ -32,7 +35,7 @@ function render() {
     for (const diff of DIFFICULTIES) {
       const row = body.insertRow();
       row.insertCell().append(badge(diff));
-      const best = scores[song.id]?.[diff];
+      const best = bestOf(records.best, song.id, diff);
       if (!song.difficulties.includes(diff)) {
         const cell = row.insertCell();
         cell.colSpan = 4;
@@ -51,7 +54,7 @@ function render() {
     return card;
   }));
 
-  const results = loadResults().slice(0, 10);
+  const results = records.recent.slice(0, 10);
   const titles = Object.fromEntries(catalog.map(s => [s.id, s.title]));
   recent.replaceChildren(...(results.length ? results.map(r => {
     const row = document.createElement('li');
@@ -70,14 +73,26 @@ function render() {
   }) : [Object.assign(document.createElement('li'), { className: 'muted', textContent: '아직 플레이 기록이 없어요.' })]));
 }
 
-document.getElementById('clearBtn').addEventListener('click', () => {
-  if (!confirm('이 기기에 저장된 최고 점수와 기록을 모두 지울까요?')) return;
-  clearBestScores();
+async function init() {
+  const online = await requireMember();   // 로그인 필수
+  try {
+    catalog = await loadCatalog();
+  } catch (err) {
+    status.textContent = err.message;
+    status.classList.add('is-error');
+    return;
+  }
+  if (!online.loggedIn) return;
+  status.textContent = '기록을 불러오는 중…';
+  const r = await loadMyRecords();
+  if (r.ok) {
+    records = r;
+    status.textContent = '';
+  } else {
+    status.textContent = '기록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.';
+    status.classList.add('is-error');
+  }
   render();
-  status.textContent = '기록을 지웠어요.';
-});
+}
 
-loadCatalog().then(c => { catalog = c; render(); }).catch(err => {
-  status.textContent = err.message;
-  status.classList.add('is-error');
-});
+init();

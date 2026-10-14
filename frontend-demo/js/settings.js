@@ -3,9 +3,11 @@ import { DEFAULT_LANE_COUNT, NOTE_SPEEDS, OFFSET_RANGE, laneColors } from './con
 import { assignKey, keyLabel } from './keys.js';
 import { keysFor, loadSettings, resetSettings, saveSettings, withKeysFor } from './storage.js';
 import { EQUIP_ERRORS, SKIN_TYPES, createLocalSkinRepository, equipSkin, equippedSkins, getSkin, ownedSkinIds } from './skins.js';
+import { requireMember } from './session.js';
 import { applyUiSkin } from './theme.js';
 
 applyUiSkin();
+requireMember();   // 로그인 필수 (세션이 만료됐으면 로그인 안내로)
 
 // 지금은 4키 설정만 화면에 보인다. 6키/8키 선택 UI 를 붙이면 이 값만 바꾸면 된다.
 const laneCount = DEFAULT_LANE_COUNT;

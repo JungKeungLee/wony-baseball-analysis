@@ -36,15 +36,22 @@ export const COMBO_BONUS = Object.freeze({ every: 10, points: 10, max: 100 });
 
 export const ACCURACY_WEIGHTS = Object.freeze({ PERFECT: 100, GREAT: 80, GOOD: 50, MISS: 0 });
 
-// LIFE: 판정마다 변화량 × 난이도 배수. 0 이 되면 GAME OVER (NO FAIL 이면 끝까지 플레이).
+// LIFE (하트 개수): 난이도별 최대 LIFE 로 시작, 0 이 되면 GAME OVER (NO FAIL 이면 끝까지 플레이).
+export const MAX_LIFE = Object.freeze({ easy: 10, normal: 8, hard: 5, hell: 3 });
 export const LIFE = Object.freeze({
-  max: 100,
-  start: 100,
-  // 회복은 아직 없음(0). 나중에 PERFECT: +1 처럼 양수를 넣으면 max 까지 회복된다 (배수는 적용 안 됨).
-  delta: Object.freeze({ PERFECT: 0, GREAT: 0, GOOD: -2, MISS: -10 }),
-  // 감소(음수)에만 적용. EASY 는 절반만 깎인다.
-  difficultyMultiplier: Object.freeze({ easy: 0.5, normal: 1.0, hard: 1.0, hell: 1.0 }),
+  maxByDifficulty: MAX_LIFE,
+  // 판정별 변화량 (LIFE 단위). MISS 1개 = 하트 1개. 양수를 넣으면 최대 LIFE 까지 회복된다.
+  delta: Object.freeze({ PERFECT: 0, GREAT: 0, GOOD: 0, MISS: -1 }),
+  // 감소(음수)에만 적용하는 난이도 배수. 난이도 차이는 최대 LIFE 로 두므로 지금은 모두 1.
+  difficultyMultiplier: Object.freeze({ easy: 1.0, normal: 1.0, hard: 1.0, hell: 1.0 }),
+  // 콤보 회복: 콤보가 every 의 배수가 될 때마다 amount 회복 (최대 LIFE 초과 없음, MISS 로 콤보가 끊기면 다시 0부터)
+  comboHeal: Object.freeze({ every: 10, amount: 0.5 }),
 });
+
+/** 난이도의 최대 LIFE (모르는 난이도는 NORMAL) */
+export function maxLifeFor(difficulty) {
+  return MAX_LIFE[difficulty] ?? MAX_LIFE.normal;
+}
 
 // 결과 등급: 정확도(%)가 min 이상인 첫 등급. GAME OVER(NO FAIL 아님)는 정확도와 무관하게 F.
 export const RANK_GRADES = Object.freeze([
